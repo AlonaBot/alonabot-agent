@@ -1,5 +1,5 @@
 // Package provider 以流式方式调用 Agent 的模型服务（Provider），
-// 支持 OpenAI Chat Completions（官方与兼容实现）与 Anthropic Messages 两类协议。
+// 支持 OpenAI Chat Completions（官方与兼容实现）、OpenAI Responses 与 Anthropic Messages 协议。
 //
 // [Client.Stream] 逐个解析 SSE 事件，按到达顺序把文本增量交给回调；
 // 工具调用的参数分段到达，组装完整且是 JSON 对象后才交出。流正常结束时返回停止原因与用量（[Result]）。
@@ -31,6 +31,7 @@ const (
 	OpenAI            Protocol = "openai"
 	OpenAICompatible  Protocol = "openai-compatible"
 	AnthropicMessages Protocol = "anthropic-messages"
+	OpenAIResponses   Protocol = "openai-responses"
 )
 
 const (
@@ -86,6 +87,7 @@ type ToolCall struct {
 	ID        string
 	Name      string
 	Arguments json.RawMessage // 完整的 JSON 对象
+	Replay    json.RawMessage // 协议要求随这次调用原样回传的不透明 JSON，由流解析写入；调用方把整个 ToolCall 原样放回 assistant 消息，不解析。openai、openai-compatible 与 anthropic-messages 不产生也不读取它
 }
 
 // ToolResult 是一次工具调用的结果，回传给模型。
@@ -133,7 +135,7 @@ type Client struct {
 // New 校验 config 并返回 Client。httpClient 不能为 nil，由调用方注入以便复用代理设置。
 // BaseURL 必须是不含用户信息、查询串与片段的 HTTP(S) 地址。
 func New(config Config, httpClient *http.Client) (*Client, error) {
-	if config.Protocol != OpenAI && config.Protocol != OpenAICompatible && config.Protocol != AnthropicMessages {
+	if config.Protocol != OpenAI && config.Protocol != OpenAICompatible && config.Protocol != AnthropicMessages && config.Protocol != OpenAIResponses {
 		return nil, fmt.Errorf("unsupported provider protocol %q", config.Protocol)
 	}
 	if config.Model == "" || config.APIKey == "" {
@@ -165,6 +167,14 @@ func (c *Client) Stream(ctx context.Context, req Request, emit func(Event) error
 	endpoint, body := openAIEndpoint, openAIBody(c.config.Protocol, c.config.Model, req)
 	if anthropic {
 		endpoint, body = anthropicEndpoint, anthropicBody(c.config.Model, req)
+	}
+	if c.config.Protocol == OpenAIResponses {
+		var err error
+		endpoint = responsesEndpoint
+		body, err = responsesBody(c.config.Model, req)
+		if err != nil {
+			return Result{}, err
+		}
 	}
 	raw, err := json.Marshal(body)
 	if err != nil {
@@ -202,6 +212,9 @@ func (c *Client) Stream(ctx context.Context, req Request, emit func(Event) error
 	// 4. 逐事件解析响应流。
 	if anthropic {
 		return c.streamAnthropic(response.Body, emit)
+	}
+	if c.config.Protocol == OpenAIResponses {
+		return c.streamResponses(response.Body, emit)
 	}
 	return c.streamOpenAI(response.Body, emit)
 }

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -41,18 +42,28 @@ const (
 func TestStream(t *testing.T) {
 	stopErr := errors.New("stop")
 	for _, tc := range []struct {
-		name      string
-		protocol  Protocol
-		status    int
-		stream    string
-		emitErr   error // emit 返回的错误
-		cancel    bool  // 发请求前取消 context
-		wantText  string
-		wantCalls int
-		wantErr   error  // 非 nil 时要求 errors.Is 匹配；为 nil 且 failed 时只要求出错
-		errText   string // 非空时要求错误文本包含它
-		failed    bool
+		name       string
+		protocol   Protocol
+		status     int
+		stream     string
+		emitErr    error // emit 返回的错误
+		cancel     bool  // 发请求前取消 context
+		wantText   string
+		wantCalls  int
+		wantErr    error  // 非 nil 时要求 errors.Is 匹配；为 nil 且 failed 时只要求出错
+		errText    string // 非空时要求错误文本包含它
+		failed     bool
+		wantReplay string
 	}{
+		{name: "responses text and tool", protocol: OpenAIResponses, wantText: "hello", wantCalls: 1,
+			wantReplay: `[{"type":"reasoning","encrypted_content":"opaque","summary":[]}]`,
+			stream: "data: {\"type\":\"response.output_text.delta\",\"delta\":\"hel\"}\n\n" +
+				"data: {\"type\":\"response.output_text.delta\",\"delta\":\"lo\"}\n\n" +
+				"data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"reasoning\",\"id\":\"r1\",\"encrypted_content\":\"opaque\",\"summary\":[]}}\n\n" +
+				"data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"function_call\",\"id\":\"fc1\",\"call_id\":\"c1\",\"name\":\"lookup\",\"arguments\":\"{\\\"q\\\":\\\"x\\\"}\"}}\n\n" +
+				"data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":5,\"output_tokens\":7}}}\n\n"},
+		{name: "responses missing completed", protocol: OpenAIResponses, wantText: "hello", failed: true,
+			stream: "data: {\"type\":\"response.output_text.delta\",\"delta\":\"hello\"}\n\n"},
 		{name: "openai text and tool", protocol: OpenAI, stream: openAITextAndTool, wantText: "hello", wantCalls: 1},
 		{name: "openai-compatible text and tool", protocol: OpenAICompatible, stream: openAITextAndTool, wantText: "hello", wantCalls: 1},
 		// 有的兼容实现在每个工具调用分段重复 id 与 name。
@@ -88,7 +99,11 @@ func TestStream(t *testing.T) {
 
 			var text strings.Builder
 			var calls []ToolCall
-			result, err := client.Stream(ctx, testRequest(), func(e Event) error {
+			req := testRequest()
+			if tc.protocol == OpenAIResponses {
+				req.Messages[3].ToolCalls[0].Replay = json.RawMessage(`[{"type":"reasoning","encrypted_content":"history","summary":[]}]`)
+			}
+			result, err := client.Stream(ctx, req, func(e Event) error {
 				if e.ToolCall != nil {
 					calls = append(calls, *e.ToolCall)
 				}
@@ -115,6 +130,18 @@ func TestStream(t *testing.T) {
 			if tc.wantCalls > 0 && (calls[0].ID != "c1" || calls[0].Name != "lookup" || string(calls[0].Arguments) != `{"q":"x"}`) {
 				t.Fatalf("tool call = %+v", calls[0])
 			}
+			if tc.wantReplay != "" {
+				var got, want any
+				if err := json.Unmarshal(calls[0].Replay, &got); err != nil {
+					t.Fatal(err)
+				}
+				if err := json.Unmarshal([]byte(tc.wantReplay), &want); err != nil {
+					t.Fatal(err)
+				}
+				if !reflect.DeepEqual(got, want) {
+					t.Fatalf("Replay = %s, want %s", calls[0].Replay, tc.wantReplay)
+				}
+			}
 		})
 	}
 }
@@ -129,12 +156,53 @@ func mockProvider(t *testing.T, protocol Protocol, status int, stream string) ht
 			MaxTokens           int              `json:"max_tokens"`
 			MaxCompletionTokens int              `json:"max_completion_tokens"`
 			StreamOptions       map[string]any   `json:"stream_options"`
+			Input               []map[string]any `json:"input"`
+			Instructions        string           `json:"instructions"`
+			Store               *bool            `json:"store"`
+			MaxOutputTokens     int              `json:"max_output_tokens"`
+			Include             []string         `json:"include"`
 		}
 		raw, _ := io.ReadAll(r.Body)
 		if err := json.Unmarshal(raw, &body); err != nil {
 			t.Errorf("decode request: %v", err)
 		}
 		switch protocol {
+		case OpenAIResponses:
+			if r.Method != http.MethodPost || r.URL.Path != "/v1/responses" || r.Header.Get("Authorization") != "Bearer "+testAPIKey || r.Header.Get("Accept") != "text/event-stream" {
+				t.Errorf("method %s, path %s, headers %v", r.Method, r.URL.Path, r.Header)
+			}
+			if body.Store == nil || *body.Store || body.Instructions != "one\n\ntwo" || body.MaxOutputTokens != 20 || !reflect.DeepEqual(body.Include, []string{"reasoning.encrypted_content"}) {
+				t.Errorf("request = %s", raw)
+			}
+			var wantInput []map[string]any
+			if err := json.Unmarshal([]byte(`[
+				{"role":"user","content":"hi"},
+				{"role":"assistant","content":"checking"},
+				{"type":"reasoning","encrypted_content":"history","summary":[]},
+				{"type":"function_call","call_id":"c0","name":"lookup","arguments":"{\"q\":\"a\"}"},
+				{"type":"function_call","call_id":"c00","name":"lookup","arguments":"{\"q\":\"b\"}"},
+				{"type":"function_call_output","call_id":"c0","output":"A"},
+				{"type":"function_call_output","call_id":"c00","output":"B"},
+				{"role":"user","content":"continue"}
+			]`), &wantInput); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(body.Input, wantInput) {
+				t.Errorf("input = %s", raw)
+			}
+			if len(body.Tools) == 1 && (body.Tools[0]["strict"] != false || body.Tools[0]["type"] != "function" || body.Tools[0]["name"] != "lookup" || body.Tools[0]["description"] != "look up" || !reflect.DeepEqual(body.Tools[0]["parameters"], map[string]any{"type": "object"})) {
+				t.Errorf("tools = %s", raw)
+			}
+			var fields map[string]any
+			if err := json.Unmarshal(raw, &fields); err != nil {
+				t.Fatal(err)
+			}
+			if fields["model"] != "test-model" || fields["stream"] != true {
+				t.Errorf("request = %s", raw)
+			}
+			if _, exists := fields["previous_response_id"]; exists {
+				t.Errorf("unexpected previous_response_id: %s", raw)
+			}
 		case OpenAI, OpenAICompatible:
 			if r.URL.Path != "/v1/chat/completions" || r.Header.Get("Authorization") != "Bearer "+testAPIKey {
 				t.Errorf("path %s, Authorization %q", r.URL.Path, r.Header.Get("Authorization"))
