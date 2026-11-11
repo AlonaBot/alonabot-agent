@@ -41,6 +41,11 @@ const (
 // TestStream 用本地模拟 Provider 验证各协议的完整请求与流解析。
 func TestStream(t *testing.T) {
 	stopErr := errors.New("stop")
+	ollamaTextAndTool := `{"message":{"content":"hel"}}
+{"message":{"content":"lo"}}
+{"message":{"tool_calls":[{"function":{"name":"lookup","arguments":{"q":"x"}}}]}}
+{"done":true,"done_reason":"stop","prompt_eval_count":5,"eval_count":7}
+`
 	for _, tc := range []struct {
 		name       string
 		protocol   Protocol
@@ -83,6 +88,8 @@ func TestStream(t *testing.T) {
 		{name: "anthropic tool arguments not object", protocol: AnthropicMessages, stream: strings.ReplaceAll(anthropicTextAndTool, `\"x\"}`, `\"x\"]`), wantText: "hello", failed: true},
 		{name: "emit error stops stream", protocol: OpenAICompatible, stream: openAITextAndTool, emitErr: stopErr, wantErr: stopErr, failed: true},
 		{name: "canceled context", protocol: AnthropicMessages, stream: anthropicTextAndTool, cancel: true, wantErr: context.Canceled, failed: true},
+		{name: "ollama text and tool", protocol: OllamaChat, stream: ollamaTextAndTool, wantText: "hello", wantCalls: 1},
+		{name: "ollama missing done", protocol: OllamaChat, stream: strings.Split(ollamaTextAndTool, `{"message":{"tool_calls"`)[0], wantText: "hello", failed: true},
 		{name: "gemini text and tool", protocol: GeminiGenerateContent, wantText: "hello", wantCalls: 1,
 			stream: "data: " + `{"candidates":[{"content":{"parts":[{"text":"hel"}]}}]}` + "\n\n" +
 				"data: " + `{"candidates":[{"content":{"parts":[{"text":"lo"}]}}]}` + "\n\n" +
@@ -138,7 +145,8 @@ func TestStream(t *testing.T) {
 			if len(calls) != tc.wantCalls {
 				t.Fatalf("tool calls = %+v, want %d", calls, tc.wantCalls)
 			}
-			if tc.wantCalls > 0 && (calls[0].ID != "c1" || calls[0].Name != "lookup" || string(calls[0].Arguments) != `{"q":"x"}`) {
+			if tc.wantCalls > 0 && (calls[0].ID == "" || (tc.protocol != OllamaChat && calls[0].ID != "c1") ||
+				calls[0].Name != "lookup" || string(calls[0].Arguments) != `{"q":"x"}`) {
 				t.Fatalf("tool call = %+v", calls[0])
 			}
 			if tc.wantReplay != "" {
@@ -170,11 +178,14 @@ func mockProvider(t *testing.T, protocol Protocol, status int, stream string) ht
 			MaxTokens           int              `json:"max_tokens"`
 			MaxCompletionTokens int              `json:"max_completion_tokens"`
 			StreamOptions       map[string]any   `json:"stream_options"`
-			Input               []map[string]any `json:"input"`
-			Instructions        string           `json:"instructions"`
-			Store               *bool            `json:"store"`
-			MaxOutputTokens     int              `json:"max_output_tokens"`
-			Include             []string         `json:"include"`
+			Options             struct {
+				NumPredict int `json:"num_predict"`
+			} `json:"options"`
+			Input           []map[string]any `json:"input"`
+			Instructions    string           `json:"instructions"`
+			Store           *bool            `json:"store"`
+			MaxOutputTokens int              `json:"max_output_tokens"`
+			Include         []string         `json:"include"`
 		}
 		raw, _ := io.ReadAll(r.Body)
 		if err := json.Unmarshal(raw, &body); err != nil {
@@ -240,6 +251,35 @@ func mockProvider(t *testing.T, protocol Protocol, status int, stream string) ht
 				blockTypes(body.Messages[1]) != "text,tool_use,tool_use" || blockTypes(body.Messages[2]) != "tool_result,tool_result,text" {
 				t.Errorf("request = %s", raw)
 			}
+		case OllamaChat:
+			if r.URL.Path != "/v1/api/chat" || r.Header.Get("Authorization") != "Bearer "+testAPIKey ||
+				r.Header.Get("Accept") != "application/x-ndjson" || body.Options.NumPredict != 20 {
+				t.Errorf("path %s, headers %v, request %s", r.URL.Path, r.Header, raw)
+			}
+			// system 原序保留，工具结果带名称且在同条消息的 user 文本之前。
+			if len(body.Messages) != 7 {
+				t.Errorf("messages = %s", raw)
+				break
+			}
+			if body.Messages[0]["role"] != "system" || body.Messages[0]["content"] != "one" ||
+				body.Messages[1]["role"] != "system" || body.Messages[1]["content"] != "two" ||
+				body.Messages[4]["role"] != "tool" || body.Messages[4]["tool_name"] != "lookup" || body.Messages[4]["content"] != "A" ||
+				body.Messages[5]["role"] != "tool" || body.Messages[5]["tool_name"] != "lookup" || body.Messages[5]["content"] != "B" ||
+				body.Messages[6]["role"] != "user" || body.Messages[6]["content"] != "continue" {
+				t.Errorf("messages = %s", raw)
+			}
+			calls, _ := body.Messages[3]["tool_calls"].([]any)
+			if body.Messages[3]["role"] != "assistant" || len(calls) != 2 {
+				t.Errorf("assistant calls = %s", raw)
+				break
+			}
+			for i, call := range calls {
+				function := call.(map[string]any)["function"].(map[string]any)
+				arguments, ok := function["arguments"].(map[string]any)
+				if function["name"] != "lookup" || !ok || arguments["q"] != []string{"a", "b"}[i] {
+					t.Errorf("tool arguments = %s", raw)
+				}
+			}
 		case GeminiGenerateContent:
 			if r.Method != http.MethodPost || r.URL.Path != "/v1/models/test-model:streamGenerateContent" || r.URL.RawQuery != "alt=sse" ||
 				r.Header.Get("x-goog-api-key") != testAPIKey || r.Header.Get("Authorization") != "" || r.Header.Get("Accept") != "text/event-stream" {
@@ -281,6 +321,9 @@ func mockProvider(t *testing.T, protocol Protocol, status int, stream string) ht
 			w.WriteHeader(status)
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
+		if protocol == OllamaChat {
+			w.Header().Set("Content-Type", "application/x-ndjson")
+		}
 		fmt.Fprint(w, stream)
 	}
 }

@@ -1,8 +1,8 @@
 // Package provider 以流式方式调用 Agent 的模型服务（Provider），
-// 支持 OpenAI Chat Completions（官方与兼容实现）、OpenAI Responses、Anthropic Messages 与 Gemini GenerateContent 协议。
+// 支持 OpenAI Chat Completions（官方与兼容实现）、OpenAI Responses、Anthropic Messages、Gemini GenerateContent 与 Ollama Chat 协议。
 //
-// [Client.Stream] 逐个解析 SSE 事件，按到达顺序把文本增量交给回调；
-// 工具调用的参数分段到达，组装完整且是 JSON 对象后才交出。流正常结束时返回停止原因与用量（[Result]）。
+// [Client.Stream] 逐个解析 SSE 事件或 NDJSON 行，按到达顺序把文本增量交给回调；
+// 工具调用的参数完整且是 JSON 对象后才交出。流正常结束时返回停止原因与用量（[Result]）。
 // 只有收到协议的终止标记才算成功，请求失败不自动重试。接口与流语义见 spec/PLAN.md T-12 步骤 1。
 package provider
 
@@ -33,6 +33,7 @@ const (
 	AnthropicMessages     Protocol = "anthropic-messages"
 	OpenAIResponses       Protocol = "openai-responses"
 	GeminiGenerateContent Protocol = "gemini-generate-content"
+	OllamaChat            Protocol = "ollama-chat"
 )
 
 const (
@@ -103,7 +104,7 @@ type Event struct {
 	ToolCall *ToolCall
 }
 
-// StopReason 是模型结束生成的原因。两种协议的常见取值统一为下列常量，
+// StopReason 是模型结束生成的原因。各协议的常见取值统一为下列常量，
 // 其他取值（例如 content_filter、refusal）原样保留 Provider 给出的字符串。
 type StopReason string
 
@@ -134,12 +135,12 @@ type Client struct {
 }
 
 // New 校验 config 并返回 Client。httpClient 不能为 nil，由调用方注入以便复用代理设置。
-// BaseURL 必须是不含用户信息、查询串与片段的 HTTP(S) 地址。
+// BaseURL 必须是不含用户信息、查询串与片段的 HTTP(S) 地址；OllamaChat 允许空 APIKey。
 func New(config Config, httpClient *http.Client) (*Client, error) {
-	if config.Protocol != OpenAI && config.Protocol != OpenAICompatible && config.Protocol != AnthropicMessages && config.Protocol != OpenAIResponses && config.Protocol != GeminiGenerateContent {
+	if config.Protocol != OpenAI && config.Protocol != OpenAICompatible && config.Protocol != AnthropicMessages && config.Protocol != OpenAIResponses && config.Protocol != GeminiGenerateContent && config.Protocol != OllamaChat {
 		return nil, fmt.Errorf("unsupported provider protocol %q", config.Protocol)
 	}
-	if config.Model == "" || config.APIKey == "" {
+	if config.Model == "" || (config.APIKey == "" && config.Protocol != OllamaChat) {
 		return nil, errors.New("provider model and API key are required")
 	}
 	baseURL, err := url.Parse(config.BaseURL)
@@ -165,6 +166,7 @@ func (c *Client) Stream(ctx context.Context, req Request, emit func(Event) error
 
 	// 2. 按协议编码请求体，拼出端点并设置认证头。
 	anthropic := c.config.Protocol == AnthropicMessages
+	ollama := c.config.Protocol == OllamaChat
 	endpoint, body := openAIEndpoint, openAIBody(c.config.Protocol, c.config.Model, req)
 	if anthropic {
 		endpoint, body = anthropicEndpoint, anthropicBody(c.config.Model, req)
@@ -184,6 +186,14 @@ func (c *Client) Stream(ctx context.Context, req Request, emit func(Event) error
 			return Result{}, err
 		}
 	}
+	if ollama {
+		var err error
+		endpoint = ollamaEndpoint
+		body, err = ollamaBody(c.config.Model, req)
+		if err != nil {
+			return Result{}, err
+		}
+	}
 	raw, err := json.Marshal(body)
 	if err != nil {
 		return Result{}, fmt.Errorf("encode provider request: %w", err)
@@ -198,12 +208,15 @@ func (c *Client) Stream(ctx context.Context, req Request, emit func(Event) error
 	}
 	httpRequest.Header.Set("Content-Type", "application/json")
 	httpRequest.Header.Set("Accept", "text/event-stream")
+	if ollama {
+		httpRequest.Header.Set("Accept", ollamaAccept)
+	}
 	if anthropic {
 		httpRequest.Header.Set("x-api-key", c.config.APIKey)
 		httpRequest.Header.Set("anthropic-version", anthropicVersion)
 	} else if c.config.Protocol == GeminiGenerateContent {
 		httpRequest.Header.Set("x-goog-api-key", c.config.APIKey)
-	} else {
+	} else if c.config.APIKey != "" {
 		httpRequest.Header.Set("Authorization", "Bearer "+c.config.APIKey)
 	}
 
@@ -222,7 +235,13 @@ func (c *Client) Stream(ctx context.Context, req Request, emit func(Event) error
 		}
 		// 响应体不是 JSON 时没有可附加的说明，只报告状态码。
 		_ = json.NewDecoder(response.Body).Decode(&errorBody)
-		return Result{}, fmt.Errorf("provider returned HTTP status %d%s", response.StatusCode, c.describeError(errorBody.Error))
+		var description string
+		if ollama {
+			description = c.describeOllamaError(errorBody.Error)
+		} else {
+			description = c.describeError(errorBody.Error)
+		}
+		return Result{}, fmt.Errorf("provider returned HTTP status %d%s", response.StatusCode, description)
 	}
 
 	// 4. 逐事件解析响应流。
@@ -234,6 +253,9 @@ func (c *Client) Stream(ctx context.Context, req Request, emit func(Event) error
 	}
 	if c.config.Protocol == GeminiGenerateContent {
 		return c.streamGemini(response.Body, emit)
+	}
+	if ollama {
+		return c.streamOllama(response.Body, emit)
 	}
 	return c.streamOpenAI(response.Body, emit)
 }
