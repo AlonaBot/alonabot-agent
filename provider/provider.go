@@ -1,5 +1,5 @@
 // Package provider 以流式方式调用 Agent 的模型服务（Provider），
-// 支持 OpenAI Chat Completions（官方与兼容实现）、OpenAI Responses 与 Anthropic Messages 协议。
+// 支持 OpenAI Chat Completions（官方与兼容实现）、OpenAI Responses、Anthropic Messages 与 Gemini GenerateContent 协议。
 //
 // [Client.Stream] 逐个解析 SSE 事件，按到达顺序把文本增量交给回调；
 // 工具调用的参数分段到达，组装完整且是 JSON 对象后才交出。流正常结束时返回停止原因与用量（[Result]）。
@@ -28,10 +28,11 @@ type Protocol string
 // OpenAI 官方推理模型只接受 max_completion_tokens，许多兼容实现只认 max_tokens；
 // stream_options 只发给 OpenAI，避免不认识它的兼容实现拒绝请求，兼容实现只在自行返回用量时才有用量。
 const (
-	OpenAI            Protocol = "openai"
-	OpenAICompatible  Protocol = "openai-compatible"
-	AnthropicMessages Protocol = "anthropic-messages"
-	OpenAIResponses   Protocol = "openai-responses"
+	OpenAI                Protocol = "openai"
+	OpenAICompatible      Protocol = "openai-compatible"
+	AnthropicMessages     Protocol = "anthropic-messages"
+	OpenAIResponses       Protocol = "openai-responses"
+	GeminiGenerateContent Protocol = "gemini-generate-content"
 )
 
 const (
@@ -135,7 +136,7 @@ type Client struct {
 // New 校验 config 并返回 Client。httpClient 不能为 nil，由调用方注入以便复用代理设置。
 // BaseURL 必须是不含用户信息、查询串与片段的 HTTP(S) 地址。
 func New(config Config, httpClient *http.Client) (*Client, error) {
-	if config.Protocol != OpenAI && config.Protocol != OpenAICompatible && config.Protocol != AnthropicMessages && config.Protocol != OpenAIResponses {
+	if config.Protocol != OpenAI && config.Protocol != OpenAICompatible && config.Protocol != AnthropicMessages && config.Protocol != OpenAIResponses && config.Protocol != GeminiGenerateContent {
 		return nil, fmt.Errorf("unsupported provider protocol %q", config.Protocol)
 	}
 	if config.Model == "" || config.APIKey == "" {
@@ -176,11 +177,21 @@ func (c *Client) Stream(ctx context.Context, req Request, emit func(Event) error
 			return Result{}, err
 		}
 	}
+	if c.config.Protocol == GeminiGenerateContent {
+		var err error
+		body, err = geminiBody(req)
+		if err != nil {
+			return Result{}, err
+		}
+	}
 	raw, err := json.Marshal(body)
 	if err != nil {
 		return Result{}, fmt.Errorf("encode provider request: %w", err)
 	}
 	target := c.baseURL.JoinPath(endpoint)
+	if c.config.Protocol == GeminiGenerateContent {
+		target = c.geminiURL()
+	}
 	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, target.String(), bytes.NewReader(raw))
 	if err != nil {
 		return Result{}, fmt.Errorf("build provider request: %w", err)
@@ -190,6 +201,8 @@ func (c *Client) Stream(ctx context.Context, req Request, emit func(Event) error
 	if anthropic {
 		httpRequest.Header.Set("x-api-key", c.config.APIKey)
 		httpRequest.Header.Set("anthropic-version", anthropicVersion)
+	} else if c.config.Protocol == GeminiGenerateContent {
+		httpRequest.Header.Set("x-goog-api-key", c.config.APIKey)
 	} else {
 		httpRequest.Header.Set("Authorization", "Bearer "+c.config.APIKey)
 	}
@@ -197,6 +210,9 @@ func (c *Client) Stream(ctx context.Context, req Request, emit func(Event) error
 	// 3. 发出请求；非 2xx 时报告状态码与 Provider 的错误说明（其中回显的 API key 已替换）。
 	response, err := c.httpClient.Do(httpRequest)
 	if err != nil {
+		if c.config.Protocol == GeminiGenerateContent {
+			err = c.geminiRequestError(err)
+		}
 		return Result{}, fmt.Errorf("send provider request: %w", err)
 	}
 	defer response.Body.Close()
@@ -215,6 +231,9 @@ func (c *Client) Stream(ctx context.Context, req Request, emit func(Event) error
 	}
 	if c.config.Protocol == OpenAIResponses {
 		return c.streamResponses(response.Body, emit)
+	}
+	if c.config.Protocol == GeminiGenerateContent {
+		return c.streamGemini(response.Body, emit)
 	}
 	return c.streamOpenAI(response.Body, emit)
 }

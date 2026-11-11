@@ -38,7 +38,7 @@ const (
 		"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
 )
 
-// TestStream 用本地模拟 Provider 驱动两种协议的完整请求与流解析（PLAN T-12 步骤 1，V-57 的 Provider 分项）。
+// TestStream 用本地模拟 Provider 验证各协议的完整请求与流解析。
 func TestStream(t *testing.T) {
 	stopErr := errors.New("stop")
 	for _, tc := range []struct {
@@ -83,6 +83,14 @@ func TestStream(t *testing.T) {
 		{name: "anthropic tool arguments not object", protocol: AnthropicMessages, stream: strings.ReplaceAll(anthropicTextAndTool, `\"x\"}`, `\"x\"]`), wantText: "hello", failed: true},
 		{name: "emit error stops stream", protocol: OpenAICompatible, stream: openAITextAndTool, emitErr: stopErr, wantErr: stopErr, failed: true},
 		{name: "canceled context", protocol: AnthropicMessages, stream: anthropicTextAndTool, cancel: true, wantErr: context.Canceled, failed: true},
+		{name: "gemini text and tool", protocol: GeminiGenerateContent, wantText: "hello", wantCalls: 1,
+			stream: "data: " + `{"candidates":[{"content":{"parts":[{"text":"hel"}]}}]}` + "\n\n" +
+				"data: " + `{"candidates":[{"content":{"parts":[{"text":"lo"}]}}]}` + "\n\n" +
+				"data: " + `{"candidates":[{"content":{"parts":[{"functionCall":{"id":"c1","name":"lookup","args":{"q":"x"}},"thoughtSignature":"response-signature"}]}}]}` + "\n\n" +
+				"data: " + `{"candidates":[{"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":5,"candidatesTokenCount":4,"thoughtsTokenCount":3}}` + "\n\n"},
+		{name: "gemini missing finishReason", protocol: GeminiGenerateContent, wantText: "hello", failed: true, errText: "without finishReason",
+			stream: "data: " + `{"candidates":[{"content":{"parts":[{"text":"hel"}]}}]}` + "\n\n" +
+				"data: " + `{"candidates":[{"content":{"parts":[{"text":"lo"}]}}]}` + "\n\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			server := httptest.NewServer(mockProvider(t, tc.protocol, tc.status, tc.stream))
@@ -102,6 +110,9 @@ func TestStream(t *testing.T) {
 			req := testRequest()
 			if tc.protocol == OpenAIResponses {
 				req.Messages[3].ToolCalls[0].Replay = json.RawMessage(`[{"type":"reasoning","encrypted_content":"history","summary":[]}]`)
+			}
+			if tc.protocol == GeminiGenerateContent {
+				req.Messages[3].ToolCalls[0].Replay = json.RawMessage(`"history-signature"`)
 			}
 			result, err := client.Stream(ctx, req, func(e Event) error {
 				if e.ToolCall != nil {
@@ -141,6 +152,9 @@ func TestStream(t *testing.T) {
 				if !reflect.DeepEqual(got, want) {
 					t.Fatalf("Replay = %s, want %s", calls[0].Replay, tc.wantReplay)
 				}
+			}
+			if tc.protocol == GeminiGenerateContent && tc.wantCalls > 0 && string(calls[0].Replay) != `"response-signature"` {
+				t.Fatalf("Replay = %s", calls[0].Replay)
 			}
 		})
 	}
@@ -225,6 +239,39 @@ func mockProvider(t *testing.T, protocol Protocol, status int, stream string) ht
 			if body.System != "one\n\ntwo" || len(body.Messages) != 3 ||
 				blockTypes(body.Messages[1]) != "text,tool_use,tool_use" || blockTypes(body.Messages[2]) != "tool_result,tool_result,text" {
 				t.Errorf("request = %s", raw)
+			}
+		case GeminiGenerateContent:
+			if r.Method != http.MethodPost || r.URL.Path != "/v1/models/test-model:streamGenerateContent" || r.URL.RawQuery != "alt=sse" ||
+				r.Header.Get("x-goog-api-key") != testAPIKey || r.Header.Get("Authorization") != "" || r.Header.Get("Accept") != "text/event-stream" {
+				t.Errorf("request %s %s, headers %v", r.Method, r.URL, r.Header)
+			}
+			// 完整比对历史顺序、调用签名、结果关联的工具名与 Schema 原样编码。
+			var got, want any
+			if err := json.Unmarshal(raw, &got); err != nil {
+				t.Errorf("decode Gemini request: %v", err)
+			}
+			if err := json.Unmarshal([]byte(`{
+				"systemInstruction":{"parts":[{"text":"one\n\ntwo"}]},
+				"contents":[
+					{"role":"user","parts":[{"text":"hi"}]},
+					{"role":"model","parts":[
+						{"text":"checking"},
+						{"functionCall":{"id":"c0","name":"lookup","args":{"q":"a"}},"thoughtSignature":"history-signature"},
+						{"functionCall":{"id":"c00","name":"lookup","args":{"q":"b"}}}
+					]},
+					{"role":"user","parts":[
+						{"functionResponse":{"id":"c0","name":"lookup","response":{"output":"A"}}},
+						{"functionResponse":{"id":"c00","name":"lookup","response":{"output":"B"}}},
+						{"text":"continue"}
+					]}
+				],
+				"tools":[{"functionDeclarations":[{"name":"lookup","description":"look up","parametersJsonSchema":{"type":"object"}}]}],
+				"generationConfig":{"maxOutputTokens":20}
+			}`), &want); err != nil {
+				t.Errorf("decode expected Gemini request: %v", err)
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("Gemini request = %s", raw)
 			}
 		}
 		if len(body.Tools) != 1 {
