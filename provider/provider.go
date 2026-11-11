@@ -3,7 +3,7 @@
 //
 // [Client.Stream] 逐个解析 SSE 事件或 NDJSON 行，按到达顺序把文本增量交给回调；
 // 工具调用的参数完整且是 JSON 对象后才交出。流正常结束时返回停止原因与用量（[Result]）。
-// 只有收到协议的终止标记才算成功，请求失败不自动重试。接口与流语义见 spec/PLAN.md T-12 步骤 1。
+// Chat Completions 以 finish_reason 和无错误结束判定成功，其他协议要求终止事件，请求失败不自动重试。接口与流语义见 spec/PLAN.md T-12 步骤 1。
 package provider
 
 import (
@@ -14,11 +14,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"net/http"
 	"net/url"
-	"slices"
 	"strings"
+
+	"github.com/anthropics/anthropic-sdk-go/v2"
+	anthropicoption "github.com/anthropics/anthropic-sdk-go/v2/option"
+	"github.com/openai/openai-go/v3"
+	openaioption "github.com/openai/openai-go/v3/option"
+	"github.com/openai/openai-go/v3/packages/ssestream"
+	"github.com/openai/openai-go/v3/responses"
 )
 
 // Protocol 是 Provider 的 HTTP API 协议。
@@ -37,12 +42,8 @@ const (
 )
 
 const (
-	openAIEndpoint    = "chat/completions"
-	anthropicEndpoint = "messages"
 	// anthropicVersion 是 Anthropic Messages API 要求的 anthropic-version 请求头。
 	anthropicVersion = "2023-06-01"
-	// openAIStreamDone 是 OpenAI 兼容流的终止标记。
-	openAIStreamDone = "[DONE]"
 	// redactedAPIKey 替换 Provider 错误说明中回显的 API key。
 	redactedAPIKey = "[REDACTED]"
 )
@@ -57,7 +58,7 @@ const (
 // Config 是一个 Provider 的连接设置。
 type Config struct {
 	Protocol Protocol
-	BaseURL  string // API 根路径，例如 https://api.openai.com/v1；请求路径追加在其后
+	BaseURL  string // API 根路径；OpenAI 含 /v1，Anthropic 为服务根地址
 	APIKey   string
 	Model    string
 }
@@ -132,11 +133,15 @@ type Client struct {
 	config     Config
 	httpClient *http.Client
 	baseURL    *url.URL
+	chat       openai.ChatCompletionService
+	responses  responses.ResponseService
+	messages   anthropic.MessageService
 }
 
 // New 校验 config 并返回 Client。httpClient 不能为 nil，由调用方注入以便复用代理设置。
 // BaseURL 必须是不含用户信息、查询串与片段的 HTTP(S) 地址；OllamaChat 允许空 APIKey。
 func New(config Config, httpClient *http.Client) (*Client, error) {
+	// 1. 校验配置，不在错误中回显可能含凭证的地址。
 	if config.Protocol != OpenAI && config.Protocol != OpenAICompatible && config.Protocol != AnthropicMessages && config.Protocol != OpenAIResponses && config.Protocol != GeminiGenerateContent && config.Protocol != OllamaChat {
 		return nil, fmt.Errorf("unsupported provider protocol %q", config.Protocol)
 	}
@@ -149,7 +154,34 @@ func New(config Config, httpClient *http.Client) (*Client, error) {
 		// 不回显原始地址，避免把其中的凭证写进错误。
 		return nil, errors.New("provider base URL must be HTTP(S) without credentials, query, or fragment")
 	}
-	return &Client{config: config, httpClient: httpClient, baseURL: baseURL}, nil
+	// 2. 只构造当前协议需要的 Service，后续请求复用其显式选项。
+	c := &Client{config: config, httpClient: httpClient, baseURL: baseURL}
+	switch config.Protocol {
+	case OpenAI, OpenAICompatible, OpenAIResponses:
+		options := []openaioption.RequestOption{
+			openaioption.WithHTTPClient(httpClient), openaioption.WithBaseURL(config.BaseURL),
+			openaioption.WithAPIKey(config.APIKey), openaioption.WithMaxRetries(0),
+			openaioption.WithHeader("Accept", "text/event-stream"),
+		}
+		// Service 构造器不读取进程环境，配置只来自显式选项。
+		if config.Protocol == OpenAIResponses {
+			c.responses = responses.NewResponseService(options...)
+		} else {
+			c.chat = openai.NewChatCompletionService(options...)
+		}
+	case AnthropicMessages:
+		c.messages = anthropic.NewClient(
+			anthropicoption.WithoutEnvironmentDefaults(),
+			anthropicoption.WithHTTPClient(httpClient), anthropicoption.WithBaseURL(config.BaseURL),
+			anthropicoption.WithAPIKey(config.APIKey), anthropicoption.WithMaxRetries(0),
+			// 锁定认证头与 API 版本，保留已有 Messages 请求契约。
+			anthropicoption.WithHeaderDel("Authorization"),
+			anthropicoption.WithHeader("x-api-key", config.APIKey),
+			anthropicoption.WithHeader("anthropic-version", anthropicVersion),
+			anthropicoption.WithHeader("Accept", "text/event-stream"),
+		).Messages
+	}
+	return c, nil
 }
 
 // Stream 发出 req，并把流中的事件依次交给 emit；流正常结束时返回停止原因与用量。
@@ -164,21 +196,34 @@ func (c *Client) Stream(ctx context.Context, req Request, emit func(Event) error
 		return Result{}, err
 	}
 
-	// 2. 按协议编码请求体，拼出端点并设置认证头。
-	anthropic := c.config.Protocol == AnthropicMessages
-	ollama := c.config.Protocol == OllamaChat
-	endpoint, body := openAIEndpoint, openAIBody(c.config.Protocol, c.config.Model, req)
-	if anthropic {
-		endpoint, body = anthropicEndpoint, anthropicBody(c.config.Model, req)
-	}
-	if c.config.Protocol == OpenAIResponses {
-		var err error
-		endpoint = responsesEndpoint
-		body, err = responsesBody(c.config.Model, req)
-		if err != nil {
-			return Result{}, err
+	// 2. SDK 协议直接复用 New 构造的 Service。
+	switch c.config.Protocol {
+	case OpenAI, OpenAICompatible, OpenAIResponses, AnthropicMessages:
+		originalEmit := emit
+		emit = func(event Event) error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if err := originalEmit(event); err != nil {
+				return err
+			}
+			// SDK 可能已缓冲后续事件，回调取消后立即停止交付。
+			return ctx.Err()
 		}
 	}
+	switch c.config.Protocol {
+	case OpenAI, OpenAICompatible:
+		return c.streamOpenAI(ctx, req, emit)
+	case OpenAIResponses:
+		return c.streamResponses(ctx, req, emit)
+	case AnthropicMessages:
+		return c.streamAnthropic(ctx, req, emit)
+	}
+
+	// 3. Gemini 与 Ollama 沿用标准库请求和流解析。
+	ollama := c.config.Protocol == OllamaChat
+	var endpoint string
+	var body map[string]any
 	if c.config.Protocol == GeminiGenerateContent {
 		var err error
 		body, err = geminiBody(req)
@@ -211,16 +256,13 @@ func (c *Client) Stream(ctx context.Context, req Request, emit func(Event) error
 	if ollama {
 		httpRequest.Header.Set("Accept", ollamaAccept)
 	}
-	if anthropic {
-		httpRequest.Header.Set("x-api-key", c.config.APIKey)
-		httpRequest.Header.Set("anthropic-version", anthropicVersion)
-	} else if c.config.Protocol == GeminiGenerateContent {
+	if c.config.Protocol == GeminiGenerateContent {
 		httpRequest.Header.Set("x-goog-api-key", c.config.APIKey)
 	} else if c.config.APIKey != "" {
 		httpRequest.Header.Set("Authorization", "Bearer "+c.config.APIKey)
 	}
 
-	// 3. 发出请求；非 2xx 时报告状态码与 Provider 的错误说明（其中回显的 API key 已替换）。
+	// 4. 发出请求；非 2xx 时报告状态码与 Provider 的错误说明（其中回显的 API key 已替换）。
 	response, err := c.httpClient.Do(httpRequest)
 	if err != nil {
 		if c.config.Protocol == GeminiGenerateContent {
@@ -244,20 +286,11 @@ func (c *Client) Stream(ctx context.Context, req Request, emit func(Event) error
 		return Result{}, fmt.Errorf("provider returned HTTP status %d%s", response.StatusCode, description)
 	}
 
-	// 4. 逐事件解析响应流。
-	if anthropic {
-		return c.streamAnthropic(response.Body, emit)
-	}
-	if c.config.Protocol == OpenAIResponses {
-		return c.streamResponses(response.Body, emit)
-	}
+	// 5. 逐事件解析响应流。
 	if c.config.Protocol == GeminiGenerateContent {
 		return c.streamGemini(response.Body, emit)
 	}
-	if ollama {
-		return c.streamOllama(response.Body, emit)
-	}
-	return c.streamOpenAI(response.Body, emit)
+	return c.streamOllama(response.Body, emit)
 }
 
 // describeError 从 Provider 的错误字段（{"message": ...} 对象或字符串）取出说明，
@@ -315,93 +348,6 @@ func isJSONObject(raw []byte) bool {
 	return json.Unmarshal(raw, &object) == nil && object != nil
 }
 
-// openAIBody 编码 Chat Completions 请求：每个工具结果单独成为一条 tool 角色消息，
-// 同一条消息的文本随后作为 user 消息。
-func openAIBody(protocol Protocol, model string, req Request) map[string]any {
-	messages := []map[string]any{}
-	for _, m := range req.Messages {
-		for _, result := range m.ToolResults {
-			messages = append(messages, map[string]any{"role": "tool", "tool_call_id": result.ToolCallID, "content": result.Content})
-		}
-		if len(m.ToolResults) > 0 && m.Content == "" {
-			continue
-		}
-		message := map[string]any{"role": m.Role, "content": m.Content}
-		if len(m.ToolCalls) > 0 {
-			calls := []map[string]any{}
-			for _, call := range m.ToolCalls {
-				calls = append(calls, map[string]any{
-					"id":       call.ID,
-					"type":     "function",
-					"function": map[string]any{"name": call.Name, "arguments": string(call.Arguments)},
-				})
-			}
-			message["tool_calls"] = calls
-		}
-		messages = append(messages, message)
-	}
-	maxTokensField := "max_tokens"
-	if protocol == OpenAI {
-		maxTokensField = "max_completion_tokens"
-	}
-	body := map[string]any{"model": model, "messages": messages, maxTokensField: req.MaxTokens, "stream": true}
-	if protocol == OpenAI {
-		body["stream_options"] = map[string]any{"include_usage": true}
-	}
-	if len(req.Tools) > 0 {
-		tools := []map[string]any{}
-		for _, tool := range req.Tools {
-			tools = append(tools, map[string]any{
-				"type":     "function",
-				"function": map[string]any{"name": tool.Name, "description": tool.Description, "parameters": tool.InputSchema},
-			})
-		}
-		body["tools"] = tools
-	}
-	return body
-}
-
-// anthropicBody 编码 Messages 请求：system 消息按顺序合并到顶层 system 字段，
-// 带工具调用或工具结果的消息转成 content block，依次为 tool_result、text、tool_use，
-// 满足 user 消息中工具结果在前、assistant 消息中文本在工具调用之前的要求。
-func anthropicBody(model string, req Request) map[string]any {
-	messages := []map[string]any{}
-	systems := []string{}
-	for _, m := range req.Messages {
-		if m.Role == roleSystem {
-			systems = append(systems, m.Content)
-			continue
-		}
-		message := map[string]any{"role": m.Role, "content": m.Content}
-		if len(m.ToolCalls) > 0 || len(m.ToolResults) > 0 {
-			blocks := []map[string]any{}
-			for _, result := range m.ToolResults {
-				blocks = append(blocks, map[string]any{"type": "tool_result", "tool_use_id": result.ToolCallID, "content": result.Content})
-			}
-			if m.Content != "" {
-				blocks = append(blocks, map[string]any{"type": "text", "text": m.Content})
-			}
-			for _, call := range m.ToolCalls {
-				blocks = append(blocks, map[string]any{"type": "tool_use", "id": call.ID, "name": call.Name, "input": call.Arguments})
-			}
-			message["content"] = blocks
-		}
-		messages = append(messages, message)
-	}
-	body := map[string]any{"model": model, "messages": messages, "max_tokens": req.MaxTokens, "stream": true}
-	if len(systems) > 0 {
-		body["system"] = strings.Join(systems, "\n\n")
-	}
-	if len(req.Tools) > 0 {
-		tools := []map[string]any{}
-		for _, tool := range req.Tools {
-			tools = append(tools, map[string]any{"name": tool.Name, "description": tool.Description, "input_schema": tool.InputSchema})
-		}
-		body["tools"] = tools
-	}
-	return body
-}
-
 // readSSE 按 SSE 格式读取 r，每遇到一个空行就把累积的 event 名和 data 交给 handle。
 // 流在两个事件之间结束时返回 nil，在事件中途结束时返回错误。
 func readSSE(r io.Reader, handle func(event, data string) error) error {
@@ -442,222 +388,68 @@ func readSSE(r io.Reader, handle func(event, data string) error) error {
 	}
 }
 
-// openAIChunk 是 OpenAI 兼容流中一个 data 事件的载荷。
-type openAIChunk struct {
-	Choices []struct {
-		Delta struct {
-			Content   string `json:"content"`
-			ToolCalls []struct {
-				Index    int    `json:"index"` // 同一工具调用的各段共用一个 index
-				ID       string `json:"id"`
-				Function struct {
-					Name      string `json:"name"`
-					Arguments string `json:"arguments"`
-				} `json:"function"`
-			} `json:"tool_calls"`
-		} `json:"delta"`
-		FinishReason string `json:"finish_reason"`
-	} `json:"choices"`
-	// Usage 只在请求了 include_usage 的末尾事件中出现，此时 choices 为空。
-	Usage *struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-	} `json:"usage"`
-	Error json.RawMessage `json:"error"`
+// sdkError 保留 HTTP 状态与脱敏说明；流错误中的说明按协议报告。
+func (c *Client) sdkError(err error, response *http.Response) error {
+	var openAIError *openai.Error
+	if errors.As(err, &openAIError) {
+		return fmt.Errorf("provider returned HTTP status %d%s", openAIError.StatusCode, c.describeError(json.RawMessage(openAIError.RawJSON())))
+	}
+	var anthropicError *anthropic.Error
+	if errors.As(err, &anthropicError) {
+		var body struct {
+			Error json.RawMessage `json:"error"`
+		}
+		_ = json.Unmarshal([]byte(anthropicError.RawJSON()), &body)
+		if anthropicError.StatusCode < 200 || anthropicError.StatusCode >= 300 {
+			return fmt.Errorf("provider returned HTTP status %d%s", anthropicError.StatusCode, c.describeError(body.Error))
+		}
+		return fmt.Errorf("Anthropic provider reported an error%s", c.describeError(body.Error))
+	}
+	if response != nil && (response.StatusCode < 200 || response.StatusCode >= 300) {
+		// SDK 对字符串或非 JSON 错误体可能只返回解码错误，原始响应仍保留状态。
+		var body struct {
+			Error json.RawMessage `json:"error"`
+		}
+		_ = json.NewDecoder(response.Body).Decode(&body)
+		return fmt.Errorf("provider returned HTTP status %d%s", response.StatusCode, c.describeError(body.Error))
+	}
+	var streamError *ssestream.StreamError
+	if errors.As(err, &streamError) {
+		var body struct {
+			Error json.RawMessage `json:"error"`
+		}
+		if decodeErr := json.Unmarshal(streamError.Event.Data, &body); decodeErr != nil {
+			return fmt.Errorf("decode provider error event: %w", decodeErr)
+		}
+		return fmt.Errorf("OpenAI-compatible provider reported an error%s", c.describeError(body.Error))
+	}
+	if strings.Contains(err.Error(), c.config.APIKey) {
+		return errors.New(strings.ReplaceAll(err.Error(), c.config.APIKey, redactedAPIKey))
+	}
+	return fmt.Errorf("provider stream: %w", err)
 }
 
-// streamOpenAI 解析 OpenAI 兼容流。工具调用的分段按 index 累积，
-// 在收到 [DONE] 后按 index 顺序逐个校验并交出。
-func (c *Client) streamOpenAI(r io.Reader, emit func(Event) error) (Result, error) {
-	calls := map[int]*ToolCall{}
-	done := false
-	var result Result
-	err := readSSE(r, func(_, data string) error {
-		if data == openAIStreamDone {
-			done = true
-			return nil
-		}
-		var chunk openAIChunk
-		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			return fmt.Errorf("decode OpenAI-compatible stream event: %w", err)
-		}
-		if len(chunk.Error) > 0 {
-			return fmt.Errorf("OpenAI-compatible provider reported an error%s", c.describeError(chunk.Error))
-		}
-		if chunk.Usage != nil {
-			result.Usage = &Usage{InputTokens: chunk.Usage.PromptTokens, OutputTokens: chunk.Usage.CompletionTokens}
-		}
-		for _, choice := range chunk.Choices {
-			if choice.FinishReason != "" {
-				result.StopReason = openAIStopReason(choice.FinishReason)
-			}
-			if choice.Delta.Content != "" {
-				if err := emit(Event{Text: choice.Delta.Content}); err != nil {
-					return err
-				}
-			}
-			for _, part := range choice.Delta.ToolCalls {
-				call := calls[part.Index]
-				if call == nil {
-					call = &ToolCall{}
-					calls[part.Index] = call
-				}
-				// id 与 name 按规范只在首个分段出现；有的兼容实现在每个分段重复它们，所以取值而不拼接。
-				if part.ID != "" {
-					call.ID = part.ID
-				}
-				if part.Function.Name != "" {
-					call.Name = part.Function.Name
-				}
-				call.Arguments = append(call.Arguments, part.Function.Arguments...)
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return Result{}, err
+func (c *Client) errorMessage(message string) string {
+	if message == "" {
+		return ""
 	}
-	if !done {
-		return Result{}, errors.New("OpenAI-compatible stream ended without [DONE]")
-	}
-	for _, index := range slices.Sorted(maps.Keys(calls)) {
-		call := calls[index]
-		if call.ID == "" || call.Name == "" || !isJSONObject(call.Arguments) {
-			return Result{}, errors.New("invalid tool call in OpenAI-compatible stream")
-		}
-		if err := emit(Event{ToolCall: call}); err != nil {
-			return Result{}, err
-		}
-	}
-	return result, nil
+	return ": " + strings.ReplaceAll(message, c.config.APIKey, redactedAPIKey)
 }
 
-func openAIStopReason(reason string) StopReason {
-	switch reason {
-	case "stop":
-		return StopEnd
-	case "length":
-		return StopMaxTokens
-	case "tool_calls", "function_call":
-		return StopToolUse
-	}
-	return StopReason(reason)
-}
-
-// anthropicEvent 是 Anthropic 流中一个 data 事件的载荷；不同 type 只使用其中部分字段。
-type anthropicEvent struct {
-	Type         string `json:"type"`
-	Index        int    `json:"index"` // content block 的序号
-	ContentBlock struct {
-		Type string `json:"type"`
-		ID   string `json:"id"`
-		Name string `json:"name"`
-	} `json:"content_block"`
-	Delta struct {
-		Type        string `json:"type"`
-		Text        string `json:"text"`
-		PartialJSON string `json:"partial_json"`
-		StopReason  string `json:"stop_reason"` // 只出现在 message_delta 中
-	} `json:"delta"`
-	Message struct {
-		Usage *anthropicUsage `json:"usage"`
-	} `json:"message"` // 只出现在 message_start 中
-	Usage *anthropicUsage `json:"usage"` // message_delta 中的累计输出用量
-	Error json.RawMessage `json:"error"`
-}
-
-// anthropicUsage 是 Anthropic 报告的用量；input_tokens 不含缓存写入与缓存读取的 token。
-type anthropicUsage struct {
-	InputTokens              int `json:"input_tokens"`
-	OutputTokens             int `json:"output_tokens"`
-	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
-	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
-}
-
-// streamAnthropic 解析 Anthropic Messages 流。tool_use block 在 content_block_stop 时交出。
-// Anthropic 会新增事件类型与 block 类型，未知的按其版本策略忽略。
-func (c *Client) streamAnthropic(r io.Reader, emit func(Event) error) (Result, error) {
-	toolUses := map[int]*ToolCall{} // 未结束的 tool_use block，按 block 序号索引
-	stopped := false
-	var result Result
-	err := readSSE(r, func(name, data string) error {
-		var event anthropicEvent
-		if err := json.Unmarshal([]byte(data), &event); err != nil {
-			return fmt.Errorf("decode Anthropic stream event: %w", err)
+// sdkFieldsValid 核对 SDK 解码状态与原值类型；SDK 会把部分标量强转标为有效。
+func sdkFieldsValid[T any](fields ...interface {
+	Valid() bool
+	Raw() string
+}) bool {
+	for _, field := range fields {
+		raw := field.Raw()
+		if raw == "" || raw == "null" {
+			continue
 		}
-		if name == "error" || event.Type == "error" {
-			return fmt.Errorf("Anthropic provider reported an error%s", c.describeError(event.Error))
+		var value T
+		if !field.Valid() || json.Unmarshal([]byte(raw), &value) != nil {
+			return false
 		}
-		switch event.Type {
-		case "message_start":
-			if usage := event.Message.Usage; usage != nil {
-				result.Usage = &Usage{
-					InputTokens:  usage.InputTokens + usage.CacheCreationInputTokens + usage.CacheReadInputTokens,
-					OutputTokens: usage.OutputTokens,
-				}
-			}
-		case "message_delta":
-			if event.Delta.StopReason != "" {
-				result.StopReason = anthropicStopReason(event.Delta.StopReason)
-			}
-			if event.Usage != nil {
-				if result.Usage == nil {
-					result.Usage = &Usage{}
-				}
-				result.Usage.OutputTokens = event.Usage.OutputTokens
-			}
-		case "content_block_start":
-			if event.ContentBlock.Type == "tool_use" {
-				toolUses[event.Index] = &ToolCall{ID: event.ContentBlock.ID, Name: event.ContentBlock.Name}
-			}
-		case "content_block_delta":
-			switch event.Delta.Type {
-			case "text_delta":
-				if event.Delta.Text != "" {
-					return emit(Event{Text: event.Delta.Text})
-				}
-			case "input_json_delta":
-				call := toolUses[event.Index]
-				if call == nil {
-					return errors.New("Anthropic tool input delta has no matching tool_use block")
-				}
-				call.Arguments = append(call.Arguments, event.Delta.PartialJSON...)
-			}
-		case "content_block_stop":
-			call := toolUses[event.Index]
-			if call == nil {
-				return nil
-			}
-			delete(toolUses, event.Index)
-			if call.ID == "" || call.Name == "" || !isJSONObject(call.Arguments) {
-				return errors.New("invalid tool call in Anthropic stream")
-			}
-			return emit(Event{ToolCall: call})
-		case "message_stop":
-			stopped = true
-		}
-		return nil
-	})
-	if err != nil {
-		return Result{}, err
 	}
-	if !stopped {
-		return Result{}, errors.New("Anthropic stream ended without message_stop")
-	}
-	if len(toolUses) > 0 {
-		return Result{}, errors.New("Anthropic stream has unfinished tool_use blocks")
-	}
-	return result, nil
-}
-
-func anthropicStopReason(reason string) StopReason {
-	switch reason {
-	case "end_turn", "stop_sequence":
-		return StopEnd
-	case "max_tokens":
-		return StopMaxTokens
-	case "tool_use":
-		return StopToolUse
-	}
-	return StopReason(reason)
+	return true
 }

@@ -79,7 +79,7 @@ func TestStream(t *testing.T) {
 		{name: "anthropic HTTP status with message", protocol: AnthropicMessages, status: http.StatusBadRequest, failed: true,
 			stream: `{"type":"error","error":{"type":"invalid_request_error","message":"bad key ` + testAPIKey + `"}}`, errText: "status 400: bad key [REDACTED]"},
 		{name: "anthropic HTTP status", protocol: AnthropicMessages, status: http.StatusTooManyRequests, stream: testAPIKey, failed: true},
-		{name: "openai missing DONE", protocol: OpenAICompatible, stream: strings.TrimSuffix(openAITextAndTool, "data: [DONE]\n\n"), wantText: "hello", failed: true},
+		{name: "openai missing finish_reason", protocol: OpenAICompatible, stream: strings.Replace(openAITextAndTool, `,"finish_reason":"tool_calls"`, "", 1), wantText: "hello", failed: true},
 		{name: "anthropic missing message_stop", protocol: AnthropicMessages, stream: strings.Split(anthropicTextAndTool, "event: content_block_start")[0], wantText: "hello", failed: true},
 		{name: "openai cut mid-event", protocol: OpenAICompatible, stream: "data: {\"choices\":[{\"delta\":{\"content\":\"x\"}}]}", failed: true},
 		{name: "openai malformed JSON", protocol: OpenAICompatible, stream: "data: {not json}\n\n", failed: true},
@@ -102,7 +102,11 @@ func TestStream(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			server := httptest.NewServer(mockProvider(t, tc.protocol, tc.status, tc.stream))
 			t.Cleanup(server.Close)
-			client, err := New(Config{Protocol: tc.protocol, BaseURL: server.URL + "/v1", APIKey: testAPIKey, Model: "test-model"}, server.Client())
+			baseURL := server.URL + "/v1"
+			if tc.protocol == AnthropicMessages {
+				baseURL = server.URL
+			}
+			client, err := New(Config{Protocol: tc.protocol, BaseURL: baseURL, APIKey: testAPIKey, Model: "test-model"}, server.Client())
 			if err != nil {
 				t.Fatal(err)
 			}
