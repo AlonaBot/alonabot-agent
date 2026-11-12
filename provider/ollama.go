@@ -3,6 +3,7 @@ package provider
 import (
 	"bufio"
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,10 +26,17 @@ func ollamaBody(model string, req Request) (map[string]any, error) {
 			}
 			messages = append(messages, map[string]any{"role": "tool", "content": result.Content, "tool_name": name})
 		}
-		if message.Role == roleUser && message.Content == "" {
+		if message.Role == roleUser && message.Content == "" && len(message.Images) == 0 {
 			continue
 		}
 		encoded := map[string]any{"role": message.Role, "content": message.Content}
+		if len(message.Images) > 0 {
+			var images []string
+			for _, image := range message.Images {
+				images = append(images, base64.StdEncoding.EncodeToString(image.Data))
+			}
+			encoded["images"] = images
+		}
 		if len(message.ToolCalls) > 0 {
 			calls := []map[string]any{}
 			for _, call := range message.ToolCalls {

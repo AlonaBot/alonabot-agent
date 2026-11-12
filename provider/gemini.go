@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -52,6 +53,11 @@ func geminiBody(req Request) (map[string]any, error) {
 			}
 			parts = append(parts, map[string]any{"functionResponse": map[string]any{
 				"id": result.ToolCallID, "name": name, "response": map[string]any{"output": result.Content},
+			}})
+		}
+		for _, image := range message.Images {
+			parts = append(parts, map[string]any{"inlineData": map[string]any{
+				"mimeType": image.MediaType, "data": base64.StdEncoding.EncodeToString(image.Data),
 			}})
 		}
 		if message.Content != "" {

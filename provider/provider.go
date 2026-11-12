@@ -63,12 +63,19 @@ type Config struct {
 	Model    string
 }
 
-// Message 是对话中的一条消息。
+// Image 携带一张内联图片的媒体类型与原始字节。
+type Image struct {
+	MediaType string // image/jpeg、image/png、image/gif 或 image/webp
+	Data      []byte // 图片的原始字节，编码时转为 base64
+}
+
+// Message 保存对话中的一条消息。
 type Message struct {
 	Role        string // system、user 或 assistant
 	Content     string
 	ToolCalls   []ToolCall   // 只出现在 assistant 消息中
 	ToolResults []ToolResult // 只出现在 user 消息中
+	Images      []Image      // 只出现在 user 消息中
 }
 
 // Tool 是提供给模型的一个工具。
@@ -323,6 +330,19 @@ func validateRequest(req Request) error {
 		}
 		if len(m.ToolResults) > 0 && m.Role != roleUser {
 			return errors.New("tool results require user role")
+		}
+		if len(m.Images) > 0 && m.Role != roleUser {
+			return errors.New("images require user role")
+		}
+		for _, image := range m.Images {
+			switch image.MediaType {
+			case "image/jpeg", "image/png", "image/gif", "image/webp":
+			default:
+				return fmt.Errorf("unsupported image media type %q", image.MediaType)
+			}
+			if len(image.Data) == 0 {
+				return errors.New("image data is required")
+			}
 		}
 		for _, result := range m.ToolResults {
 			if result.ToolCallID == "" {

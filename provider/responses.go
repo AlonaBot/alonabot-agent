@@ -3,6 +3,7 @@ package provider
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -33,7 +34,21 @@ func responsesParams(model string, req Request) (responses.ResponseNewParams, er
 				},
 			})
 		}
-		if message.Content != "" {
+		if len(message.Images) > 0 {
+			var parts []responses.ResponseInputContentUnionParam
+			for _, image := range message.Images {
+				parts = append(parts, responses.ResponseInputContentUnionParam{OfInputImage: &responses.ResponseInputImageParam{
+					ImageURL: openai.String("data:" + image.MediaType + ";base64," + base64.StdEncoding.EncodeToString(image.Data)),
+				}})
+			}
+			if message.Content != "" {
+				parts = append(parts, responses.ResponseInputContentUnionParam{OfInputText: &responses.ResponseInputTextParam{Text: message.Content}})
+			}
+			input = append(input, responses.ResponseInputItemUnionParam{OfMessage: &responses.EasyInputMessageParam{
+				Role:    responses.EasyInputMessageRole(message.Role),
+				Content: responses.EasyInputMessageContentUnionParam{OfInputItemContentList: parts},
+			}})
+		} else if message.Content != "" {
 			input = append(input, responses.ResponseInputItemUnionParam{OfMessage: &responses.EasyInputMessageParam{
 				Role:    responses.EasyInputMessageRole(message.Role),
 				Content: responses.EasyInputMessageContentUnionParam{OfString: openai.String(message.Content)},

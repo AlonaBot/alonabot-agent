@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"maps"
 	"net/http"
@@ -18,7 +19,7 @@ func chatParams(protocol Protocol, model string, req Request) openai.ChatComplet
 		for _, result := range message.ToolResults {
 			params.Messages = append(params.Messages, openai.ToolMessage(result.Content, result.ToolCallID))
 		}
-		if len(message.ToolResults) > 0 && message.Content == "" {
+		if len(message.ToolResults) > 0 && message.Content == "" && len(message.Images) == 0 {
 			continue
 		}
 		var encoded openai.ChatCompletionMessageParamUnion
@@ -27,6 +28,18 @@ func chatParams(protocol Protocol, model string, req Request) openai.ChatComplet
 			encoded = openai.SystemMessage(message.Content)
 		case roleUser:
 			encoded = openai.UserMessage(message.Content)
+			if len(message.Images) > 0 {
+				var parts []openai.ChatCompletionContentPartUnionParam
+				for _, image := range message.Images {
+					parts = append(parts, openai.ImageContentPart(openai.ChatCompletionContentPartImageImageURLParam{
+						URL: "data:" + image.MediaType + ";base64," + base64.StdEncoding.EncodeToString(image.Data),
+					}))
+				}
+				if message.Content != "" {
+					parts = append(parts, openai.TextContentPart(message.Content))
+				}
+				encoded = openai.UserMessage(parts)
+			}
 		case roleAssistant:
 			assistant := openai.ChatCompletionAssistantMessageParam{
 				Content: openai.ChatCompletionAssistantMessageParamContentUnion{OfString: openai.String(message.Content)},

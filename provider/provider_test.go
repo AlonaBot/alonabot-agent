@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -59,7 +60,18 @@ func TestStream(t *testing.T) {
 		errText    string // 非空时要求错误文本包含它
 		failed     bool
 		wantReplay string
+		images     bool
 	}{
+		{name: "openai image", protocol: OpenAI, images: true, stream: openAITextAndTool, wantText: "hello", wantCalls: 1},
+		{name: "openai-compatible image", protocol: OpenAICompatible, images: true, stream: openAITextAndTool, wantText: "hello", wantCalls: 1},
+		{name: "anthropic image", protocol: AnthropicMessages, images: true, stream: anthropicTextAndTool, wantText: "hello", wantCalls: 1},
+		{name: "ollama image", protocol: OllamaChat, images: true, stream: ollamaTextAndTool, wantText: "hello", wantCalls: 1},
+		{name: "responses image", protocol: OpenAIResponses, images: true, wantText: "hello", wantCalls: 1,
+			stream: "data: {\"type\":\"response.output_text.delta\",\"delta\":\"hello\"}\n\n" +
+				"data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"function_call\",\"call_id\":\"c1\",\"name\":\"lookup\",\"arguments\":\"{\\\"q\\\":\\\"x\\\"}\"}}\n\n" +
+				"data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":5,\"output_tokens\":7}}}\n\n"},
+		{name: "gemini image", protocol: GeminiGenerateContent, images: true, wantText: "hello", wantCalls: 1,
+			stream: "data: " + `{"candidates":[{"content":{"parts":[{"text":"hello"},{"functionCall":{"id":"c1","name":"lookup","args":{"q":"x"}},"thoughtSignature":"response-signature"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":5,"candidatesTokenCount":4,"thoughtsTokenCount":3}}` + "\n\n"},
 		{name: "responses text and tool", protocol: OpenAIResponses, wantText: "hello", wantCalls: 1,
 			wantReplay: `[{"type":"reasoning","encrypted_content":"opaque","summary":[]}]`,
 			stream: "data: {\"type\":\"response.output_text.delta\",\"delta\":\"hel\"}\n\n" +
@@ -100,7 +112,7 @@ func TestStream(t *testing.T) {
 				"data: " + `{"candidates":[{"content":{"parts":[{"text":"lo"}]}}]}` + "\n\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			server := httptest.NewServer(mockProvider(t, tc.protocol, tc.status, tc.stream))
+			server := httptest.NewServer(mockProvider(t, tc.protocol, tc.status, tc.stream, tc.images))
 			t.Cleanup(server.Close)
 			baseURL := server.URL + "/v1"
 			if tc.protocol == AnthropicMessages {
@@ -119,6 +131,13 @@ func TestStream(t *testing.T) {
 			var text strings.Builder
 			var calls []ToolCall
 			req := testRequest()
+			if tc.images {
+				png, err := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGP4DwABAQEAsTj2FAAAAABJRU5ErkJggg==")
+				if err != nil {
+					t.Fatal(err)
+				}
+				req.Messages[2].Images = []Image{{MediaType: "image/png", Data: png}}
+			}
 			if tc.protocol == OpenAIResponses {
 				req.Messages[3].ToolCalls[0].Replay = json.RawMessage(`[{"type":"reasoning","encrypted_content":"history","summary":[]}]`)
 			}
@@ -173,7 +192,7 @@ func TestStream(t *testing.T) {
 }
 
 // mockProvider 返回模拟 Provider：校验路径、认证头与请求体编码后，按 status 返回 stream。
-func mockProvider(t *testing.T, protocol Protocol, status int, stream string) http.HandlerFunc {
+func mockProvider(t *testing.T, protocol Protocol, status int, stream string, images ...bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Messages            []map[string]any `json:"messages"`
@@ -194,6 +213,53 @@ func mockProvider(t *testing.T, protocol Protocol, status int, stream string) ht
 		raw, _ := io.ReadAll(r.Body)
 		if err := json.Unmarshal(raw, &body); err != nil {
 			t.Errorf("decode request: %v", err)
+		}
+		if len(images) > 0 && images[0] {
+			const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGP4DwABAQEAsTj2FAAAAABJRU5ErkJggg=="
+			var message map[string]any
+			var got, want any
+			switch protocol {
+			case OpenAI, OpenAICompatible:
+				message = body.Messages[2]
+				got = message["content"]
+				want = []any{map[string]any{"type": "image_url", "image_url": map[string]any{"url": "data:image/png;base64," + png}}, map[string]any{"type": "text", "text": "hi"}}
+			case OpenAIResponses:
+				message = body.Input[0]
+				got = message["content"]
+				want = []any{map[string]any{"type": "input_image", "image_url": "data:image/png;base64," + png}, map[string]any{"type": "input_text", "text": "hi"}}
+			case AnthropicMessages:
+				message = body.Messages[0]
+				got = message["content"]
+				want = []any{map[string]any{"type": "image", "source": map[string]any{"type": "base64", "media_type": "image/png", "data": png}}, map[string]any{"type": "text", "text": "hi"}}
+			case OllamaChat:
+				message = body.Messages[2]
+				got = message["images"]
+				want = []any{png}
+				if message["content"] != "hi" {
+					t.Errorf("image text = %#v", message["content"])
+				}
+			case GeminiGenerateContent:
+				var fields map[string]any
+				if err := json.Unmarshal(raw, &fields); err != nil {
+					t.Error(err)
+					return
+				}
+				message = fields["contents"].([]any)[0].(map[string]any)
+				got = message["parts"]
+				want = []any{map[string]any{"inlineData": map[string]any{"mimeType": "image/png", "data": png}}, map[string]any{"text": "hi"}}
+				message["parts"] = []any{map[string]any{"text": "hi"}}
+				var err error
+				raw, err = json.Marshal(fields)
+				if err != nil {
+					t.Error(err)
+					return
+				}
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("image content = %#v, want %#v", got, want)
+			}
+			// 图片已单独核对，复用原有断言检查请求的其余字段。
+			message["content"] = "hi"
 		}
 		switch protocol {
 		case OpenAIResponses:

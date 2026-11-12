@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -27,7 +28,10 @@ func anthropicParams(model string, req Request) anthropic.MessageNewParams {
 			block.OfToolResult.IsError = param.Opt[bool]{}
 			blocks = append(blocks, block)
 		}
-		if message.Content != "" || (len(message.ToolCalls) == 0 && len(message.ToolResults) == 0) {
+		for _, image := range message.Images {
+			blocks = append(blocks, anthropic.NewImageBlockBase64(image.MediaType, base64.StdEncoding.EncodeToString(image.Data)))
+		}
+		if message.Content != "" || (len(message.ToolCalls) == 0 && len(message.ToolResults) == 0 && len(message.Images) == 0) {
 			blocks = append(blocks, anthropic.NewTextBlock(message.Content))
 		}
 		for _, call := range message.ToolCalls {
@@ -37,7 +41,7 @@ func anthropicParams(model string, req Request) anthropic.MessageNewParams {
 		if message.Role == roleAssistant {
 			encoded = anthropic.NewAssistantMessage(blocks...)
 		}
-		if len(message.ToolCalls) == 0 && len(message.ToolResults) == 0 {
+		if len(message.ToolCalls) == 0 && len(message.ToolResults) == 0 && len(message.Images) == 0 {
 			// 纯文本历史沿用字符串 content；SDK 类型只提供 block 数组。
 			if encoded.OfUser != nil {
 				encoded.OfUser.SetExtraFields(map[string]any{"content": message.Content})
