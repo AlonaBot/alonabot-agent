@@ -205,6 +205,9 @@
     },
     "history_entries": {
       "description": "历史条数"
+    },
+    "llm_service_allowed_plugins": {
+      "description": "允许生成文本的插件"
     }
   }
 }

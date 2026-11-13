@@ -15,5 +15,10 @@
     "agent.unknown_persona": "Unknown persona: {name}",
     "agent.unknown_provider": "Unknown provider: {name}",
     "agent.reset": "Conversation cleared."
+  },
+  "config": {
+    "llm_service_allowed_plugins": {
+      "description": "Plugins allowed to generate text"
+    }
   }
 }

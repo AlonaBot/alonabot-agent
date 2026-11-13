@@ -278,7 +278,8 @@
   },
   "default_provider": {
     "type": "string",
-    "description": "Default provider"
+    "description": "Default provider",
+    "options_from": {"source": "@agent/llm.providers"}
   },
   "personas": {
     "type": "list",
@@ -308,5 +309,10 @@
       "max": 500,
       "step": 1
     }
+  },
+  "llm_service_allowed_plugins": {
+    "type": "list",
+    "description": "Plugins allowed to generate text",
+    "default": ["*"]
   }
 }

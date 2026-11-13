@@ -14,6 +14,7 @@ import (
 	"github.com/AlonaBot/AlonaBot/sdk"
 	"github.com/AlonaBot/AlonaBot/sdk/config"
 	"github.com/AlonaBot/AlonaBot/sdk/gormdb"
+	"github.com/AlonaBot/AlonaBot/sdk/llm"
 	"gorm.io/gorm"
 )
 
@@ -23,16 +24,19 @@ type configuredProvider struct {
 	name      string
 	client    *provider.Client
 	maxTokens int
+	protocol  provider.Protocol
+	model     string
 }
 
 type persona struct{ name, prompt string }
 
 type configuration struct {
-	providers       []configuredProvider
-	personas        []persona
-	defaultProvider string
-	defaultPersona  string
-	historyEntries  int
+	providers                []configuredProvider
+	personas                 []persona
+	defaultProvider          string
+	defaultPersona           string
+	historyEntries           int
+	llmServiceAllowedPlugins []string
 }
 
 type component struct {
@@ -55,12 +59,15 @@ func New() *sdk.Plugin {
 	})
 	a.registerCommands(p)
 	a.registerConversation(p)
+	sdk.Serve(p, llm.GenerateService).Access(sdk.AccessPublic).Handle(a.generate)
+	sdk.ServeOptions(p, providersServiceName, a.providers)
 	return p
 }
 
 func readConfiguration(values config.Values) (configuration, error) {
 	// 1. 在配置边界验证名称、密钥与连接参数，客户端复用进程的代理环境。
 	result := configuration{defaultProvider: values.String("default_provider"), defaultPersona: values.String("default_persona"), historyEntries: int(values.Int("history_entries"))}
+	result.llmServiceAllowedPlugins = values.Strings("llm_service_allowed_plugins")
 	names := make(map[string]bool)
 	for _, item := range values.TemplateList("providers") {
 		name := item.String("name")
@@ -75,7 +82,7 @@ func readConfiguration(values config.Values) (configuration, error) {
 		if err != nil {
 			return configuration{}, fmt.Errorf("configure provider: %w", err)
 		}
-		result.providers = append(result.providers, configuredProvider{name: name, client: client, maxTokens: int(item.Int("max_tokens"))})
+		result.providers = append(result.providers, configuredProvider{name: name, client: client, maxTokens: int(item.Int("max_tokens")), protocol: provider.Protocol(item.String("protocol")), model: item.String("model")})
 	}
 	if (result.defaultProvider != "" || len(names) > 0) && !names[result.defaultProvider] {
 		return configuration{}, fmt.Errorf("default_provider must name a configured provider")
