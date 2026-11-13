@@ -49,6 +49,7 @@ type operation struct {
 
 type loopback struct {
 	core       adapter.Core
+	cores      map[string]adapter.Core // 各实例的真实入站入口，启动后只读。
 	edit       bool
 	buttons    bool
 	limit      uint64
@@ -62,9 +63,41 @@ func (a *loopback) Descriptor() *adapter.Descriptor {
 	return &adapter.Descriptor{AdapterID: loopID, Capabilities: a.Capabilities()}
 }
 
-func (a *loopback) Start(_ context.Context, _ adapter.StartRequest, core adapter.Core) (adapter.Instance, error) {
-	a.core = core
-	return a, nil
+func (a *loopback) Start(_ context.Context, request adapter.StartRequest, core adapter.Core) (adapter.Instance, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.cores == nil {
+		a.cores = make(map[string]adapter.Core)
+	}
+	a.cores[request.InstanceID] = core
+	if request.InstanceID == "main" {
+		a.core = core
+	}
+	return &loopbackInstance{loopback: a, instance: request.InstanceID}, nil
+}
+
+type loopbackInstance struct {
+	*loopback
+	instance string
+}
+
+func (a *loopbackInstance) Account() adapter.Account {
+	if a.instance == "main" {
+		return a.loopback.Account()
+	}
+	return adapter.Account{ID: "bot-" + a.instance}
+}
+
+func (a *loopbackInstance) Send(ctx context.Context, to message.Session, chain message.Chain) (*message.SendResult, *errcode.Error) {
+	result, err := a.loopback.Send(ctx, to, chain)
+	result.AdapterInstanceID = a.instance
+	return result, err
+}
+
+func (a *loopbackInstance) Edit(ctx context.Context, to message.Session, id string, chain message.Chain) (*message.SendResult, *errcode.Error) {
+	result, err := a.loopback.Edit(ctx, to, id, chain)
+	result.AdapterInstanceID = a.instance
+	return result, err
 }
 
 func (*loopback) Account() adapter.Account { return adapter.Account{ID: "bot"} }
@@ -137,7 +170,11 @@ type harness struct {
 
 func startAgent(t *testing.T, loop *loopback, configuration map[string]any, coreExtra map[string]any, plugins ...*sdk.Plugin) *harness {
 	t.Helper()
-	dir := t.TempDir()
+	return startAgentAt(t, t.TempDir(), loop, configuration, coreExtra, agent.New(), nil, plugins...)
+}
+
+func startAgentAt(t *testing.T, dir string, loop *loopback, configuration map[string]any, coreExtra map[string]any, root *sdk.Plugin, args []string, plugins ...*sdk.Plugin) *harness {
+	t.Helper()
 	pluginDir := filepath.Join(dir, "plugins", agentID)
 	if err := os.MkdirAll(pluginDir, 0o700); err != nil {
 		t.Fatal(err)
@@ -150,7 +187,7 @@ func startAgent(t *testing.T, loop *loopback, configuration map[string]any, core
 	writeJSON(t, filepath.Join(dir, "core_config.json"), coreConfig)
 	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 	logger := slog.Default()
-	options := []alonabot.Option{alonabot.DataDir(dir), alonabot.Plugin(agent.New()), alonabot.Adapter(loop)}
+	options := []alonabot.Option{alonabot.DataDir(dir), alonabot.Plugin(root), alonabot.Adapter(loop), alonabot.Args(args...)}
 	for _, plugin := range plugins {
 		options = append(options, alonabot.Plugin(plugin))
 	}
@@ -213,7 +250,7 @@ func (h *harness) waitText(t *testing.T, text string) []operation {
 
 func (h *harness) entries(t *testing.T) []map[string]string {
 	t.Helper()
-	rows, err := h.db.QueryContext(h.ctx, "SELECT entry_json FROM conversation_entry WHERE plugin_id = ? AND conversation_key = ? ORDER BY seq", agentID, string(loopSession))
+	rows, err := h.db.QueryContext(h.ctx, "SELECT entry_json FROM conversation_entry WHERE plugin_id = ? AND conversation_key = ? ORDER BY seq", agentID, string(loopSession)+"@main")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -242,8 +279,16 @@ func (h *harness) waitEntries(t *testing.T, count int) []map[string]string {
 	defer ticker.Stop()
 	for {
 		entries := h.entries(t)
-		if len(entries) == count {
-			return entries
+		if len(entries) == count+1 {
+			if entries[0]["role"] != "system" || entries[0]["kind"] != "memory_snapshot" {
+				t.Fatalf("missing initial memory snapshot: %v", entries)
+			}
+			for _, entry := range entries[1:] {
+				if entry["kind"] != "" {
+					t.Fatalf("unexpected snapshot in ordinary history: %v", entries)
+				}
+			}
+			return entries[1:]
 		}
 		select {
 		case <-ticker.C:
@@ -320,10 +365,9 @@ func TestAgentConversation(t *testing.T) {
 				if len(operations) != 2 || operations[0].text != "Hello" || operations[0].method != "send" {
 					t.Fatalf("partial content was not preserved: %v", operations)
 				}
-				for _, entry := range h.entries(t) {
-					if entry["role"] == "assistant" {
-						t.Fatalf("failed assistant was stored: %v", entry)
-					}
+				entries := h.entries(t)
+				if len(entries) != 1 || entries[0]["role"] != "system" || entries[0]["kind"] != "memory_snapshot" || entries[0]["content"] != "" {
+					t.Fatalf("failed turn must retain only the empty snapshot: %v", entries)
 				}
 			} else {
 				entries := h.waitEntries(t, 2)

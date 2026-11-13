@@ -4,6 +4,7 @@
     "description": "Official conversational agent"
   },
   "messages": {
+    "agent.memory_error": "Memory could not be read ({code}).",
     "agent.no_provider": "Ask an administrator to configure and select a provider.",
     "agent.error": "The provider request failed ({code}).",
     "agent.enabled": "Free conversation is on.",

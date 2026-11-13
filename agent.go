@@ -53,6 +53,8 @@ func New() *sdk.Plugin {
 	a := &component{}
 	gormdb.Migrations(p, []gormdb.Migration{{ID: 1, Up: func(ctx context.Context, tx *gorm.DB) error {
 		return tx.WithContext(ctx).AutoMigrate(&chatSettings{})
+	}}, {ID: 2, Up: func(ctx context.Context, tx *gorm.DB) error {
+		return tx.WithContext(ctx).AutoMigrate(&memoryRecord{})
 	}}})
 	p.OnStart(func(ctx context.Context) error {
 		var err error
@@ -67,6 +69,7 @@ func New() *sdk.Plugin {
 	p.OnStop(a.closeMCP)
 	a.registerCommands(p)
 	a.registerConversation(p)
+	registerMemory(p)
 	sdk.Serve(p, llm.GenerateService).Access(sdk.AccessPublic).Handle(a.generate)
 	sdk.ServeOptions(p, providersServiceName, a.providers)
 	return p

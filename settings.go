@@ -47,7 +47,7 @@ func (a *component) updateSettings(c *sdk.Context, update func(*chatSettings)) e
 		return err
 	}
 	return db.WithContext(c.Context()).Transaction(func(tx *gorm.DB) error {
-		settings, err := a.settings(c.Context(), string(c.Session()), tx)
+		settings, err := a.settings(c.Context(), sessionKey(c), tx)
 		if err != nil {
 			return err
 		}
@@ -83,14 +83,14 @@ func (a *component) registerCommands(p *sdk.Plugin) {
 }
 
 func (a *component) resetConversation(c *sdk.Context) error {
-	lock := a.sessionLock(string(c.Session()))
+	lock := a.sessionLock(sessionKey(c))
 	lock.Lock()
 	defer lock.Unlock()
 	// 与轮次最终的代次核对和追加共用锁，清空后旧轮次只能跳过追加。
 	if err := a.updateSettings(c, func(s *chatSettings) { s.ResetGeneration++ }); err != nil {
 		return err
 	}
-	return sdk.ClearConversation(c.Context(), string(c.Session()))
+	return sdk.ClearConversation(c.Context(), sessionKey(c))
 }
 
 func (a *component) selectPersona(c *sdk.Context, name string) error {

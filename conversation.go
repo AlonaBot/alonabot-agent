@@ -24,6 +24,7 @@ const (
 
 type conversationEntry struct {
 	Role    string `json:"role"`
+	Kind    string `json:"kind,omitempty"`
 	Speaker string `json:"speaker,omitempty"` // 群聊 user 条目的平台外部用户 ID。
 	Content string `json:"content"`
 }
@@ -38,7 +39,7 @@ func (a *component) registerConversation(p *sdk.Plugin) {
 		if err != nil {
 			return err
 		}
-		settings, err := a.settings(c.Context(), string(c.Session()), db)
+		settings, err := a.settings(c.Context(), sessionKey(c), db)
 		if err != nil || !settings.Enabled {
 			return err
 		}
@@ -50,24 +51,27 @@ func (a *component) converse(c *sdk.Context, text string) error {
 	// 1. 在延续调用内读取当前选择与最近的历史，按原序组装请求。
 	db, err := gormdb.Open(c.Context())
 	if err != nil {
-		return err
+		return memoryError(c, err)
 	}
-	session := string(c.Session())
+	session := sessionKey(c)
 	lock := a.sessionLock(session)
 	// 等 reset 的代次递增和历史清空一起完成，再取得新轮次的代次。
 	lock.Lock()
 	settings, err := a.settings(c.Context(), session, db)
-	lock.Unlock()
 	if err != nil {
+		lock.Unlock()
 		return err
 	}
 	selected := a.config.provider(settings.Provider)
 	if selected == nil {
+		lock.Unlock()
 		return c.Reply(c.T("agent.no_provider"))
 	}
-	history, err := recentConversation(c.Context(), string(c.Session()), a.config.historyEntries)
+	// 快照初始化与 reset 共用会话锁；生成期间释放，由代次保护最终追加。
+	history, profile, err := a.conversationMemory(c, db, session)
+	lock.Unlock()
 	if err != nil {
-		return err
+		return memoryError(c, err)
 	}
 	request := provider.Request{MaxTokens: selected.maxTokens}
 	if persona := a.config.persona(settings.Persona); persona != nil && persona.prompt != "" {
@@ -75,6 +79,9 @@ func (a *component) converse(c *sdk.Context, text string) error {
 	}
 	for _, entry := range history {
 		request.Messages = append(request.Messages, provider.Message{Role: entry.Role, Content: entry.Content})
+	}
+	if profile != "" {
+		request.Messages = append(request.Messages, provider.Message{Role: roleSystem, Content: profile})
 	}
 	request.Messages = append(request.Messages, provider.Message{Role: roleUser, Content: text})
 
@@ -150,31 +157,37 @@ func (a *component) converse(c *sdk.Context, text string) error {
 	return err
 }
 
+// recentConversation 独立保留冻结快照，count 仅限制普通历史条数。
 func recentConversation(ctx context.Context, key string, count int) ([]conversationEntry, error) {
-	if count == 0 {
-		return nil, nil
-	}
-	var recent []sdk.ConversationEntry
+	var recent []conversationEntry
+	var snapshot *conversationEntry
 	var from uint64
 	for {
 		entries, next, more, err := sdk.ListConversation(ctx, key, from)
 		if err != nil {
 			return nil, err
 		}
-		recent = append(recent, entries...)
-		if len(recent) > count {
-			recent = recent[len(recent)-count:]
+		for _, stored := range entries {
+			var entry conversationEntry
+			if err := json.Unmarshal(stored.Entry, &entry); err != nil {
+				return nil, fmt.Errorf("decode conversation entry %d: %w", stored.Seq, err)
+			}
+			if entry.Kind == memorySnapshot {
+				snapshot = &entry
+			} else if count > 0 {
+				recent = append(recent, entry)
+				if len(recent) > count {
+					recent = recent[len(recent)-count:]
+				}
+			}
 		}
 		if !more {
 			break
 		}
 		from = next
 	}
-	result := make([]conversationEntry, len(recent))
-	for i, entry := range recent {
-		if err := json.Unmarshal(entry.Entry, &result[i]); err != nil {
-			return nil, fmt.Errorf("decode conversation entry %d: %w", entry.Seq, err)
-		}
+	if snapshot != nil {
+		recent = append([]conversationEntry{*snapshot}, recent...)
 	}
-	return result, nil
+	return recent, nil
 }
