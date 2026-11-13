@@ -36,12 +36,14 @@ type configuration struct {
 	defaultProvider          string
 	defaultPersona           string
 	historyEntries           int
+	mcpServers               []mcpServer
 	llmServiceAllowedPlugins []string
 }
 
 type component struct {
 	config       configuration
 	sessionLocks [sessionLockCount]sync.Mutex
+	mcp          []*mcpPeer // 当前插件 Session 拥有，连接在首次对话时建立。
 }
 
 // New 创建官方 Agent，绑定生成资源并登记命令、迁移和生命周期回调。
@@ -55,8 +57,14 @@ func New() *sdk.Plugin {
 	p.OnStart(func(ctx context.Context) error {
 		var err error
 		a.config, err = readConfiguration(p.Config())
+		if err == nil {
+			for _, server := range a.config.mcpServers {
+				a.mcp = append(a.mcp, newMCPPeer(server))
+			}
+		}
 		return err
 	})
+	p.OnStop(a.closeMCP)
 	a.registerCommands(p)
 	a.registerConversation(p)
 	sdk.Serve(p, llm.GenerateService).Access(sdk.AccessPublic).Handle(a.generate)
@@ -94,6 +102,12 @@ func readConfiguration(values config.Values) (configuration, error) {
 	if (result.defaultPersona != "" || len(result.personas) > 0) && result.persona(result.defaultPersona) == nil {
 		return configuration{}, fmt.Errorf("default_persona must name a configured persona")
 	}
+	// 3. MCP 仅校验当前传输使用的字段；凭证已经过 SDK secret 解析。
+	servers, err := readMCPServers(values)
+	if err != nil {
+		return configuration{}, err
+	}
+	result.mcpServers = servers
 	return result, nil
 }
 

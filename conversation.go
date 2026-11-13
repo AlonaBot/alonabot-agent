@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"iter"
@@ -77,20 +78,27 @@ func (a *component) converse(c *sdk.Context, text string) error {
 	}
 	request.Messages = append(request.Messages, provider.Message{Role: roleUser, Content: text})
 
+	catalog, err := a.listTools(c)
+	if err != nil {
+		if c.Context().Err() != nil {
+			return c.Context().Err()
+		}
+		c.Logger().ErrorContext(c.Context(), "tool directory failed", "error", err)
+		return c.Reply(c.T("agent.tools_error", "code", errcode.Unavailable.String()))
+	}
+
 	// 2. Pull2 将 Provider 的推送回调转为 Stream 的拉取回调；stop 交还控制权并关闭响应体。
 	var assistant strings.Builder
 	var providerError error
 	next, stop := iter.Pull2(func(yield func(string, error) bool) {
-		_, providerError = selected.client.Stream(c.Context(), request, func(event provider.Event) error {
-			if event.Text != "" {
-				assistant.WriteString(event.Text)
-				if !yield(event.Text, nil) {
-					return context.Canceled
-				}
+		providerError = runToolLoop(c.Context(), selected, request, catalog, func(text string) error {
+			assistant.WriteString(text)
+			if !yield(text, nil) {
+				return context.Canceled
 			}
 			return nil
 		})
-		if providerError != nil {
+		if providerError != nil && !errors.Is(providerError, errToolLimit) {
 			yield("", providerError)
 			return
 		}
@@ -102,11 +110,18 @@ func (a *component) converse(c *sdk.Context, text string) error {
 		return text, err
 	})
 	if err != nil {
+		if c.Context().Err() != nil {
+			return c.Context().Err()
+		}
 		if providerError == nil {
 			return err
 		}
 		c.Logger().ErrorContext(c.Context(), "provider conversation failed", "error", providerError)
 		return c.Reply(c.T("agent.error", "code", errcode.Unavailable.String()))
+	}
+
+	if errors.Is(providerError, errToolLimit) {
+		return c.Reply(c.T("agent.tool_limit"))
 	}
 
 	// 3. 生成和显示成功后，仅将仍属于当前 reset 代次的轮次原子追加。

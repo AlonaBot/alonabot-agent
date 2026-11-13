@@ -14,7 +14,9 @@
     "agent.provider_selected": "已选择 Provider：{name}",
     "agent.unknown_persona": "找不到人格：{name}",
     "agent.unknown_provider": "找不到 Provider：{name}",
-    "agent.reset": "已清除会话历史。"
+    "agent.reset": "已清除会话历史。",
+    "agent.tool_limit": "已达到本轮工具调用上限，本轮对话已结束。",
+    "agent.tools_error": "工具目录请求失败（{code}）。"
   },
   "commands": {
     "ask": {
@@ -205,6 +207,48 @@
     },
     "history_entries": {
       "description": "历史条数"
+    },
+    "mcp_servers": {
+      "description": "MCP 服务器",
+      "items": {
+        "name": {
+          "description": "名称"
+        },
+        "transport": {
+          "description": "传输方式"
+        },
+        "command": {
+          "description": "命令"
+        },
+        "args": {
+          "description": "参数"
+        },
+        "env": {
+          "description": "环境变量",
+          "items": {
+            "name": {
+              "description": "名称"
+            },
+            "value": {
+              "description": "秘密值"
+            }
+          }
+        },
+        "url": {
+          "description": "服务地址"
+        },
+        "headers": {
+          "description": "HTTP 请求头",
+          "items": {
+            "name": {
+              "description": "名称"
+            },
+            "value": {
+              "description": "秘密值"
+            }
+          }
+        }
+      }
     },
     "llm_service_allowed_plugins": {
       "description": "允许生成文本的插件"

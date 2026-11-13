@@ -42,11 +42,15 @@ func init() {
 	})
 }
 
-type operation struct{ method, id, text string }
+type operation struct {
+	method, id, text string
+	buttons          []message.Button
+}
 
 type loopback struct {
 	core       adapter.Core
 	edit       bool
+	buttons    bool
 	limit      uint64
 	mu         sync.Mutex // 记录由 Core 并发调用的发送与编辑。
 	operations []operation
@@ -69,12 +73,21 @@ func (a *loopback) Capabilities() []message.Capability {
 	return []message.Capability{
 		{Name: "message.send", Version: 1, Supported: true, TextLimit: &message.TextLimit{Max: a.limit, Unit: message.TextUnicodeCodePoints}},
 		{Name: "message.edit", Version: 1, Supported: a.edit},
+		{Name: "message.buttons", Version: 1, Supported: a.buttons},
 	}
 }
 
 func (a *loopback) record(method, id string, to message.Session, chain message.Chain) (*message.SendResult, *errcode.Error) {
 	a.mu.Lock()
-	a.operations = append(a.operations, operation{method: method, id: id, text: chain.Text()})
+	op := operation{method: method, id: id, text: chain.Text()}
+	for _, segment := range chain {
+		if buttons, ok := segment.(message.ButtonsSegment); ok {
+			for _, row := range buttons.Rows {
+				op.buttons = append(op.buttons, row...)
+			}
+		}
+	}
+	a.operations = append(a.operations, op)
 	close(a.changed)
 	a.changed = make(chan struct{})
 	a.mu.Unlock()
@@ -119,6 +132,7 @@ type harness struct {
 	loop *loopback
 	db   *sql.DB
 	dir  string
+	stop func() error
 }
 
 func startAgent(t *testing.T, loop *loopback, configuration map[string]any, coreExtra map[string]any, plugins ...*sdk.Plugin) *harness {
@@ -146,9 +160,9 @@ func startAgent(t *testing.T, loop *loopback, configuration map[string]any, core
 		slog.SetDefault(logger)
 		t.Fatalf("start Agent: %v", err)
 	}
+	stop := sync.OnceValue(func() error { cancel(); return core.Wait() })
 	t.Cleanup(func() {
-		cancel()
-		if err := core.Wait(); err != nil {
+		if err := stop(); err != nil {
 			t.Errorf("stop Agent: %v", err)
 		}
 		slog.SetDefault(logger)
@@ -158,7 +172,7 @@ func startAgent(t *testing.T, loop *loopback, configuration map[string]any, core
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
-	return &harness{ctx: ctx, loop: loop, db: db, dir: dir}
+	return &harness{ctx: ctx, loop: loop, db: db, dir: dir, stop: stop}
 }
 
 func writeJSON(t *testing.T, path string, value any) {
@@ -347,4 +361,33 @@ func TestAgentConversation(t *testing.T) {
 			}
 		})
 	}
+}
+
+func (h *harness) click(t *testing.T, op operation, allow bool, user string) {
+	t.Helper()
+	index := 0
+	if !allow {
+		index = 1
+	}
+	accepted, err := h.loop.core.Deliver(h.ctx, &message.Event{Type: "button.clicked", Source: message.SourceAdapter, AdapterID: loopID, AdapterInstanceID: "main", AccountID: "bot", Session: loopSession, ChatType: message.ChatGroup, Actor: &message.Actor{ExternalUserID: user, AdapterInstanceID: "main", Locale: "en-US"}, Payload: &message.ButtonClickedPayload{Value: op.buttons[index].CoreToken, CallbackQueryID: fmt.Sprint(h.loop.sequence.Add(1)), OriginPlatformMessageID: op.id}}, nil)
+	if err != nil || !accepted {
+		t.Fatalf("click confirmation: accepted=%v, error=%v", accepted, err)
+	}
+}
+
+func (h *harness) confirmation(t *testing.T, after int) operation {
+	t.Helper()
+	var found operation
+	if !h.loop.wait(h.ctx, func(operations []operation) bool {
+		for _, op := range operations[after:] {
+			if len(op.buttons) == 2 {
+				found = op
+				return true
+			}
+		}
+		return false
+	}) {
+		t.Fatalf("wait confirmation: %v", h.loop.snapshot())
+	}
+	return found
 }

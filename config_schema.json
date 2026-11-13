@@ -310,6 +310,85 @@
       "step": 1
     }
   },
+  "mcp_servers": {
+    "type": "list",
+    "description": "MCP servers",
+    "items": {
+      "name": {
+        "type": "string",
+        "description": "Name",
+        "required": true
+      },
+      "transport": {
+        "type": "string",
+        "description": "Transport",
+        "options": [
+          "stdio",
+          "streamable-http"
+        ],
+        "default": "stdio"
+      },
+      "command": {
+        "type": "string",
+        "description": "Command",
+        "condition": {
+          "transport": "stdio"
+        }
+      },
+      "args": {
+        "type": "list",
+        "description": "Arguments",
+        "condition": {
+          "transport": "stdio"
+        }
+      },
+      "env": {
+        "type": "list",
+        "description": "Environment variables",
+        "items": {
+          "name": {
+            "type": "string",
+            "description": "Name",
+            "required": true
+          },
+          "value": {
+            "type": "string",
+            "description": "Secret value",
+            "secret": true
+          }
+        },
+        "condition": {
+          "transport": "stdio"
+        }
+      },
+      "url": {
+        "type": "string",
+        "description": "URL",
+        "condition": {
+          "transport": "streamable-http"
+        }
+      },
+      "headers": {
+        "type": "list",
+        "description": "HTTP headers",
+        "items": {
+          "name": {
+            "type": "string",
+            "description": "Name",
+            "required": true
+          },
+          "value": {
+            "type": "string",
+            "description": "Secret value",
+            "secret": true
+          }
+        },
+        "condition": {
+          "transport": "streamable-http"
+        }
+      }
+    }
+  },
   "llm_service_allowed_plugins": {
     "type": "list",
     "description": "Plugins allowed to generate text",

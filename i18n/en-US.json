@@ -14,9 +14,53 @@
     "agent.provider_selected": "Provider selected: {name}",
     "agent.unknown_persona": "Unknown persona: {name}",
     "agent.unknown_provider": "Unknown provider: {name}",
-    "agent.reset": "Conversation cleared."
+    "agent.reset": "Conversation cleared.",
+    "agent.tool_limit": "The tool call limit has been reached. This conversation turn has ended.",
+    "agent.tools_error": "The tool directory request failed ({code})."
   },
   "config": {
+    "mcp_servers": {
+      "description": "MCP servers",
+      "items": {
+        "name": {
+          "description": "Name"
+        },
+        "transport": {
+          "description": "Transport"
+        },
+        "command": {
+          "description": "Command"
+        },
+        "args": {
+          "description": "Arguments"
+        },
+        "env": {
+          "description": "Environment variables",
+          "items": {
+            "name": {
+              "description": "Name"
+            },
+            "value": {
+              "description": "Secret value"
+            }
+          }
+        },
+        "url": {
+          "description": "URL"
+        },
+        "headers": {
+          "description": "HTTP headers",
+          "items": {
+            "name": {
+              "description": "Name"
+            },
+            "value": {
+              "description": "Secret value"
+            }
+          }
+        }
+      }
+    },
     "llm_service_allowed_plugins": {
       "description": "Plugins allowed to generate text"
     }
