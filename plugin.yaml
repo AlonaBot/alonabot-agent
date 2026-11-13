@@ -1,0 +1,9 @@
+# 官方 Agent 组件的工程身份与静态图标。
+id: alonabot_agent_official
+name: AlonaBot Agent
+version: 0.1.0
+author: AlonaBot
+role: agent
+description: Official conversational agent
+source: github.com/AlonaBot/AlonaBot
+icon: assets/icons/agent.svg

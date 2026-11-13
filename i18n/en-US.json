@@ -1,0 +1,19 @@
+{
+  "metadata": {
+    "name": "AlonaBot Agent",
+    "description": "Official conversational agent"
+  },
+  "messages": {
+    "agent.no_provider": "Ask an administrator to configure and select a provider.",
+    "agent.error": "The provider request failed ({code}).",
+    "agent.enabled": "Free conversation is on.",
+    "agent.disabled": "Free conversation is off.",
+    "agent.personas": "Personas: {names}",
+    "agent.providers": "Providers: {names}",
+    "agent.persona_selected": "Persona selected: {name}",
+    "agent.provider_selected": "Provider selected: {name}",
+    "agent.unknown_persona": "Unknown persona: {name}",
+    "agent.unknown_provider": "Unknown provider: {name}",
+    "agent.reset": "Conversation cleared."
+  }
+}

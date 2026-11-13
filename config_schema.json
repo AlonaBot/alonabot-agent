@@ -1,0 +1,312 @@
+{
+  "$version": 1,
+  "providers": {
+    "type": "template_list",
+    "description": "Providers",
+    "templates": {
+      "openai": {
+        "name": "OpenAI",
+        "display_item": "name",
+        "items": {
+          "name": {
+            "type": "string",
+            "description": "Name",
+            "required": true
+          },
+          "protocol": {
+            "type": "string",
+            "description": "Protocol",
+            "options": [
+              "openai",
+              "openai-compatible",
+              "anthropic-messages",
+              "openai-responses",
+              "gemini-generate-content",
+              "ollama-chat"
+            ],
+            "default": "openai"
+          },
+          "base_url": {
+            "type": "string",
+            "description": "Base URL",
+            "default": "https://api.openai.com/v1"
+          },
+          "api_key": {
+            "type": "string",
+            "description": "API key",
+            "secret": true
+          },
+          "model": {
+            "type": "string",
+            "description": "Model",
+            "required": true
+          },
+          "max_tokens": {
+            "type": "int",
+            "description": "Maximum output tokens",
+            "hint": "Must be at least 1.",
+            "default": 2048
+          }
+        }
+      },
+      "anthropic": {
+        "name": "Anthropic",
+        "display_item": "name",
+        "items": {
+          "name": {
+            "type": "string",
+            "description": "Name",
+            "required": true
+          },
+          "protocol": {
+            "type": "string",
+            "description": "Protocol",
+            "options": [
+              "openai",
+              "openai-compatible",
+              "anthropic-messages",
+              "openai-responses",
+              "gemini-generate-content",
+              "ollama-chat"
+            ],
+            "default": "anthropic-messages"
+          },
+          "base_url": {
+            "type": "string",
+            "description": "Base URL",
+            "default": "https://api.anthropic.com"
+          },
+          "api_key": {
+            "type": "string",
+            "description": "API key",
+            "secret": true
+          },
+          "model": {
+            "type": "string",
+            "description": "Model",
+            "required": true
+          },
+          "max_tokens": {
+            "type": "int",
+            "description": "Maximum output tokens",
+            "hint": "Must be at least 1.",
+            "default": 2048
+          }
+        }
+      },
+      "gemini": {
+        "name": "Gemini",
+        "display_item": "name",
+        "items": {
+          "name": {
+            "type": "string",
+            "description": "Name",
+            "required": true
+          },
+          "protocol": {
+            "type": "string",
+            "description": "Protocol",
+            "options": [
+              "openai",
+              "openai-compatible",
+              "anthropic-messages",
+              "openai-responses",
+              "gemini-generate-content",
+              "ollama-chat"
+            ],
+            "default": "gemini-generate-content"
+          },
+          "base_url": {
+            "type": "string",
+            "description": "Base URL",
+            "default": "https://generativelanguage.googleapis.com/v1beta"
+          },
+          "api_key": {
+            "type": "string",
+            "description": "API key",
+            "secret": true
+          },
+          "model": {
+            "type": "string",
+            "description": "Model",
+            "required": true
+          },
+          "max_tokens": {
+            "type": "int",
+            "description": "Maximum output tokens",
+            "hint": "Must be at least 1.",
+            "default": 2048
+          }
+        }
+      },
+      "deepseek": {
+        "name": "DeepSeek",
+        "display_item": "name",
+        "items": {
+          "name": {
+            "type": "string",
+            "description": "Name",
+            "required": true
+          },
+          "protocol": {
+            "type": "string",
+            "description": "Protocol",
+            "options": [
+              "openai",
+              "openai-compatible",
+              "anthropic-messages",
+              "openai-responses",
+              "gemini-generate-content",
+              "ollama-chat"
+            ],
+            "default": "openai-compatible"
+          },
+          "base_url": {
+            "type": "string",
+            "description": "Base URL",
+            "default": "https://api.deepseek.com/v1"
+          },
+          "api_key": {
+            "type": "string",
+            "description": "API key",
+            "secret": true
+          },
+          "model": {
+            "type": "string",
+            "description": "Model",
+            "required": true
+          },
+          "max_tokens": {
+            "type": "int",
+            "description": "Maximum output tokens",
+            "hint": "Must be at least 1.",
+            "default": 2048
+          }
+        }
+      },
+      "ollama": {
+        "name": "Ollama",
+        "display_item": "name",
+        "items": {
+          "name": {
+            "type": "string",
+            "description": "Name",
+            "required": true
+          },
+          "protocol": {
+            "type": "string",
+            "description": "Protocol",
+            "options": [
+              "openai",
+              "openai-compatible",
+              "anthropic-messages",
+              "openai-responses",
+              "gemini-generate-content",
+              "ollama-chat"
+            ],
+            "default": "ollama-chat"
+          },
+          "base_url": {
+            "type": "string",
+            "description": "Base URL",
+            "default": "http://localhost:11434"
+          },
+          "api_key": {
+            "type": "string",
+            "description": "API key",
+            "secret": true
+          },
+          "model": {
+            "type": "string",
+            "description": "Model",
+            "required": true
+          },
+          "max_tokens": {
+            "type": "int",
+            "description": "Maximum output tokens",
+            "hint": "Must be at least 1.",
+            "default": 2048
+          }
+        }
+      },
+      "custom": {
+        "name": "Custom",
+        "display_item": "name",
+        "items": {
+          "name": {
+            "type": "string",
+            "description": "Name",
+            "required": true
+          },
+          "protocol": {
+            "type": "string",
+            "description": "Protocol",
+            "options": [
+              "openai",
+              "openai-compatible",
+              "anthropic-messages",
+              "openai-responses",
+              "gemini-generate-content",
+              "ollama-chat"
+            ],
+            "default": "openai-compatible"
+          },
+          "base_url": {
+            "type": "string",
+            "description": "Base URL",
+            "required": true
+          },
+          "api_key": {
+            "type": "string",
+            "description": "API key",
+            "secret": true
+          },
+          "model": {
+            "type": "string",
+            "description": "Model",
+            "required": true
+          },
+          "max_tokens": {
+            "type": "int",
+            "description": "Maximum output tokens",
+            "hint": "Must be at least 1.",
+            "default": 2048
+          }
+        }
+      }
+    }
+  },
+  "default_provider": {
+    "type": "string",
+    "description": "Default provider"
+  },
+  "personas": {
+    "type": "list",
+    "description": "Personas",
+    "items": {
+      "name": {
+        "type": "string",
+        "description": "Name",
+        "required": true
+      },
+      "prompt": {
+        "type": "text",
+        "description": "System prompt"
+      }
+    }
+  },
+  "default_persona": {
+    "type": "string",
+    "description": "Default persona"
+  },
+  "history_entries": {
+    "type": "int",
+    "description": "History entries",
+    "default": 20,
+    "slider": {
+      "min": 0,
+      "max": 500,
+      "step": 1
+    }
+  }
+}
