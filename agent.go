@@ -73,6 +73,7 @@ func New() *sdk.Plugin {
 	p.OnStop(a.closeMCP)
 	a.registerCommands(p)
 	a.registerConversation(p)
+	sdk.OnTask(p, agentTask).Handle(a.scheduled)
 	registerMemory(p)
 	sdk.Serve(p, llm.GenerateService).Access(sdk.AccessPublic).Handle(a.generate)
 	sdk.ServeOptions(p, providersServiceName, a.providers)

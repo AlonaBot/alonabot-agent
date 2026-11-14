@@ -29,6 +29,7 @@ type roundTool struct {
 	session    *mcp.ClientSession // 本轮目录捕获的来源，不随下一轮重建映射。
 	mcpName    string
 	local      func(json.RawMessage) string // 插件内工具直接执行，无 Core 策略与确认。
+	blocked    bool                         // 后台任务没有 Actor，拒绝所有需要交互确认的工具。
 }
 
 type toolCatalog struct {
@@ -43,7 +44,7 @@ func (a *component) listTools(c *sdk.Context) (toolCatalog, error) {
 	}
 	tools := make([]roundTool, 0, len(core))
 	for _, tool := range core {
-		tools = append(tools, roundTool{original: tool.Name, definition: provider.Tool{Description: tool.Description, InputSchema: tool.InputSchema}})
+		tools = append(tools, roundTool{original: tool.Name, blocked: c.User() == "" && tool.Policy == "confirm", definition: provider.Tool{Description: tool.Description, InputSchema: tool.InputSchema}})
 	}
 	for _, peer := range a.mcp {
 		session, entries, err := peer.tools(c.Context())
@@ -65,7 +66,7 @@ func (a *component) listTools(c *sdk.Context) (toolCatalog, error) {
 					err = fmt.Errorf("MCP tool input schema must be an object")
 					break
 				}
-				additions = append(additions, roundTool{original: "mcp/" + peer.config.Name + "/" + tool.Name, peer: peer, session: session, mcpName: tool.Name, definition: provider.Tool{Description: tool.Description, InputSchema: schema}})
+				additions = append(additions, roundTool{original: "mcp/" + peer.config.Name + "/" + tool.Name, blocked: c.User() == "", peer: peer, session: session, mcpName: tool.Name, definition: provider.Tool{Description: tool.Description, InputSchema: schema}})
 			}
 		}
 		if err != nil {
@@ -79,6 +80,7 @@ func (a *component) listTools(c *sdk.Context) (toolCatalog, error) {
 	}
 	catalog := mapTools(tools)
 	a.addSkillTool(&catalog)
+	a.addTaskTools(c, &catalog)
 	return catalog, nil
 }
 
@@ -123,6 +125,9 @@ func normalizedToolName(original string) string {
 }
 
 func (t roundTool) invoke(ctx context.Context, arguments json.RawMessage) string {
+	if t.blocked {
+		return "error: PERMISSION_DENIED"
+	}
 	if t.local != nil {
 		return t.local(arguments)
 	}

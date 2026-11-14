@@ -120,7 +120,13 @@ func TestAgentMemory(t *testing.T) {
 				switch requests.Add(1) {
 				case 1:
 					checkMemoryContext(t, request, "original note", "private A", "private B")
-					if len(request.Tools) != 1 {
+					var memoryName string
+					for _, tool := range request.Tools {
+						if strings.HasPrefix(tool.Function.Description, "Update chat notes") {
+							memoryName = tool.Function.Name
+						}
+					}
+					if memoryName == "" {
 						t.Errorf("memory tool directory=%+v", request.Tools)
 						w.WriteHeader(500)
 						return
@@ -129,7 +135,7 @@ func TestAgentMemory(t *testing.T) {
 					if scenario.policy != 0 {
 						setMemoryPolicy(t, h, scenario.policy)
 					}
-					writeMemoryCall(w, request.Tools[0].Function.Name, json.RawMessage(`{"operations":[{"op":"add","target":"memory","text":"temporary"},{"op":"patch","target":"memory","old_text":"original","text":"updated note"},{"op":"remove","target":"memory","old_text":"temporary"},{"op":"add","target":"user","text":"A preference"}]}`))
+					writeMemoryCall(w, memoryName, json.RawMessage(`{"operations":[{"op":"add","target":"memory","text":"temporary"},{"op":"patch","target":"memory","old_text":"original","text":"updated note"},{"op":"remove","target":"memory","old_text":"temporary"},{"op":"add","target":"user","text":"A preference"}]}`))
 				case 2:
 					expected := "{}"
 					if !scenario.allow {
