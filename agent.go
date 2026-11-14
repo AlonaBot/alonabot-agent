@@ -18,7 +18,7 @@ import (
 	"gorm.io/gorm"
 )
 
-//go:generate go run ../cmd/alonabot plugin generate
+//go:generate go run ../cmd/alonabot build --out ../bin/generated/agent
 
 type configuredProvider struct {
 	name       string
