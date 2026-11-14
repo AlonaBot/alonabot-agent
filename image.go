@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
 
 	"github.com/AlonaBot/AlonaBot/agent/provider"
@@ -46,9 +47,7 @@ func readImage(ctx context.Context, source message.MediaSource) (provider.Image,
 	if incoming.Readability != message.Readable {
 		return provider.Image{}, fmt.Errorf("image is not readable: %d", incoming.Readability)
 	}
-	switch incoming.MIME {
-	case "image/jpeg", "image/png", "image/gif", "image/webp":
-	default:
+	if incoming.MIME != "" && !supportedImageMIME(incoming.MIME) {
 		return provider.Image{}, fmt.Errorf("unsupported image MIME: %q", incoming.MIME)
 	}
 	reader, err := sdk.OpenMedia(ctx, source)
@@ -62,7 +61,24 @@ func readImage(ctx context.Context, source message.MediaSource) (provider.Image,
 	if len(data) == 0 {
 		return provider.Image{}, fmt.Errorf("image is empty")
 	}
-	return provider.Image{MediaType: incoming.MIME, Data: data}, nil
+	mime := incoming.MIME
+	if mime == "" {
+		// 入站媒体可省略未知 MIME；只在缺少声明时按内容判断。
+		mime = http.DetectContentType(data)
+		if !supportedImageMIME(mime) {
+			return provider.Image{}, fmt.Errorf("unsupported image MIME: %q", mime)
+		}
+	}
+	return provider.Image{MediaType: mime, Data: data}, nil
+}
+
+func supportedImageMIME(mime string) bool {
+	switch mime {
+	case "image/jpeg", "image/png", "image/gif", "image/webp":
+		return true
+	default:
+		return false
+	}
 }
 
 func readImages(c *sdk.Context, text string) (string, []provider.Image) {
