@@ -4,6 +4,7 @@
     "description": "官方对话 Agent"
   },
   "messages": {
+    "agent.skills.header": "可用技能（使用 load_skill 读取技能）：",
     "agent.memory_error": "记忆读取失败（{code}）。",
     "agent.no_provider": "请管理员配置并选择 Provider。",
     "agent.error": "Provider 请求失败（{code}）。",
@@ -40,6 +41,10 @@
     }
   },
   "config": {
+    "skills_dir": {
+      "description": "技能目录",
+      "hint": "留空关闭技能。相对路径以插件工作目录为基准，修改技能后需重启插件。"
+    },
     "providers": {
       "description": "Provider",
       "templates": {

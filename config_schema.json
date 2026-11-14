@@ -389,6 +389,12 @@
       }
     }
   },
+  "skills_dir": {
+    "type": "string",
+    "description": "Skills directory",
+    "hint": "Empty disables skills. Relative paths use the plugin working directory. Restart the plugin after changing skills.",
+    "default": ""
+  },
   "llm_service_allowed_plugins": {
     "type": "list",
     "description": "Plugins allowed to generate text",

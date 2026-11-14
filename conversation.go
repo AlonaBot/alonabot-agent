@@ -77,6 +77,9 @@ func (a *component) converse(c *sdk.Context, text string) error {
 	if persona := a.config.persona(settings.Persona); persona != nil && persona.prompt != "" {
 		request.Messages = append(request.Messages, provider.Message{Role: roleSystem, Content: persona.prompt})
 	}
+	if len(a.skills) > 0 {
+		request.Messages = append(request.Messages, provider.Message{Role: roleSystem, Content: a.skillPrompt(c.T("agent.skills.header"))})
+	}
 	for _, entry := range history {
 		request.Messages = append(request.Messages, provider.Message{Role: entry.Role, Content: entry.Content})
 	}

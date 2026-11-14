@@ -37,6 +37,7 @@ type configuration struct {
 	defaultPersona           string
 	historyEntries           int
 	mcpServers               []mcpServer
+	skillsDir                string
 	llmServiceAllowedPlugins []string
 }
 
@@ -44,6 +45,7 @@ type component struct {
 	config       configuration
 	sessionLocks [sessionLockCount]sync.Mutex
 	mcp          []*mcpPeer // 当前插件 Session 拥有，连接在首次对话时建立。
+	skills       []skill    // 启动时读取，整个插件 Session 内保持不变。
 }
 
 // New 创建官方 Agent，绑定生成资源并登记命令、迁移和生命周期回调。
@@ -60,6 +62,7 @@ func New() *sdk.Plugin {
 		var err error
 		a.config, err = readConfiguration(p.Config())
 		if err == nil {
+			a.skills = readSkills(a.config.skillsDir)
 			for _, server := range a.config.mcpServers {
 				a.mcp = append(a.mcp, newMCPPeer(server))
 			}
@@ -79,6 +82,7 @@ func readConfiguration(values config.Values) (configuration, error) {
 	// 1. 在配置边界验证名称、密钥与连接参数，客户端复用进程的代理环境。
 	result := configuration{defaultProvider: values.String("default_provider"), defaultPersona: values.String("default_persona"), historyEntries: int(values.Int("history_entries"))}
 	result.llmServiceAllowedPlugins = values.Strings("llm_service_allowed_plugins")
+	result.skillsDir = values.String("skills_dir")
 	names := make(map[string]bool)
 	for _, item := range values.TemplateList("providers") {
 		name := item.String("name")

@@ -28,6 +28,7 @@ type roundTool struct {
 	peer       *mcpPeer
 	session    *mcp.ClientSession // 本轮目录捕获的来源，不随下一轮重建映射。
 	mcpName    string
+	local      func(json.RawMessage) string // 插件内工具直接执行，无 Core 策略与确认。
 }
 
 type toolCatalog struct {
@@ -76,7 +77,9 @@ func (a *component) listTools(c *sdk.Context) (toolCatalog, error) {
 		}
 		tools = append(tools, additions...)
 	}
-	return mapTools(tools), nil
+	catalog := mapTools(tools)
+	a.addSkillTool(&catalog)
+	return catalog, nil
 }
 
 func mapTools(tools []roundTool) toolCatalog {
@@ -120,6 +123,9 @@ func normalizedToolName(original string) string {
 }
 
 func (t roundTool) invoke(ctx context.Context, arguments json.RawMessage) string {
+	if t.local != nil {
+		return t.local(arguments)
+	}
 	if t.peer == nil {
 		result, err := sdk.InvokeTool(ctx, t.original, arguments)
 		return toolResult(string(result), err)
