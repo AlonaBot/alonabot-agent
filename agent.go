@@ -1,6 +1,6 @@
-// Package agent 提供官方 Agent 组件，通过 SDK 管理聊天设置、会话历史和流式回复。
+// Package agent 提供官方 Agent 组件，通过 SDK 管理聊天设置、会话历史、图片和流式回复。
 //
-// [New] 构造独立的组件对象；Provider 客户端位于 provider 子包，聊天设置保存在
+// [New] 构造独立的组件对象；Provider 客户端位于 provider 子包，聊天设置与图片保存在
 // 受管 SQLite，会话条目交由 Core 保存。生命周期与会话契约见 CONTRACTS §13。
 package agent
 
@@ -21,11 +21,12 @@ import (
 //go:generate go run ../cmd/alonabot plugin generate
 
 type configuredProvider struct {
-	name      string
-	client    *provider.Client
-	maxTokens int
-	protocol  provider.Protocol
-	model     string
+	name       string
+	client     *provider.Client
+	maxTokens  int
+	protocol   provider.Protocol
+	model      string
+	imageInput bool
 }
 
 type persona struct{ name, prompt string }
@@ -54,7 +55,7 @@ func New() *sdk.Plugin {
 	sdk.UseGenerated(p, alonabotGenerated)
 	a := &component{}
 	gormdb.Migrations(p, []gormdb.Migration{{ID: 1, Up: func(ctx context.Context, tx *gorm.DB) error {
-		return tx.WithContext(ctx).AutoMigrate(&chatSettings{})
+		return tx.WithContext(ctx).AutoMigrate(&chatSettings{}, &conversationImage{})
 	}}, {ID: 2, Up: func(ctx context.Context, tx *gorm.DB) error {
 		return tx.WithContext(ctx).AutoMigrate(&memoryRecord{})
 	}}})
@@ -97,7 +98,7 @@ func readConfiguration(values config.Values) (configuration, error) {
 		if err != nil {
 			return configuration{}, fmt.Errorf("configure provider: %w", err)
 		}
-		result.providers = append(result.providers, configuredProvider{name: name, client: client, maxTokens: int(item.Int("max_tokens")), protocol: provider.Protocol(item.String("protocol")), model: item.String("model")})
+		result.providers = append(result.providers, configuredProvider{name: name, client: client, maxTokens: int(item.Int("max_tokens")), protocol: provider.Protocol(item.String("protocol")), model: item.String("model"), imageInput: item.Bool("image_input")})
 	}
 	if (result.defaultProvider != "" || len(names) > 0) && !names[result.defaultProvider] {
 		return configuration{}, fmt.Errorf("default_provider must name a configured provider")

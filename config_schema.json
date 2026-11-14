@@ -46,6 +46,11 @@
             "description": "Maximum output tokens",
             "hint": "Must be at least 1.",
             "default": 2048
+          },
+          "image_input": {
+            "type": "bool",
+            "description": "Image input",
+            "default": false
           }
         }
       },
@@ -91,6 +96,11 @@
             "description": "Maximum output tokens",
             "hint": "Must be at least 1.",
             "default": 2048
+          },
+          "image_input": {
+            "type": "bool",
+            "description": "Image input",
+            "default": false
           }
         }
       },
@@ -136,6 +146,11 @@
             "description": "Maximum output tokens",
             "hint": "Must be at least 1.",
             "default": 2048
+          },
+          "image_input": {
+            "type": "bool",
+            "description": "Image input",
+            "default": false
           }
         }
       },
@@ -181,6 +196,11 @@
             "description": "Maximum output tokens",
             "hint": "Must be at least 1.",
             "default": 2048
+          },
+          "image_input": {
+            "type": "bool",
+            "description": "Image input",
+            "default": false
           }
         }
       },
@@ -226,6 +246,11 @@
             "description": "Maximum output tokens",
             "hint": "Must be at least 1.",
             "default": 2048
+          },
+          "image_input": {
+            "type": "bool",
+            "description": "Image input",
+            "default": false
           }
         }
       },
@@ -271,6 +296,11 @@
             "description": "Maximum output tokens",
             "hint": "Must be at least 1.",
             "default": 2048
+          },
+          "image_input": {
+            "type": "bool",
+            "description": "Image input",
+            "default": false
           }
         }
       }

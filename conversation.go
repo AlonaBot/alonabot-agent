@@ -23,16 +23,18 @@ const (
 )
 
 type conversationEntry struct {
-	Role    string `json:"role"`
-	Kind    string `json:"kind,omitempty"`
-	Speaker string `json:"speaker,omitempty"` // 群聊 user 条目的平台外部用户 ID。
-	Content string `json:"content"`
+	Role    string   `json:"role"`
+	Kind    string   `json:"kind,omitempty"`
+	Speaker string   `json:"speaker,omitempty"` // 群聊 user 条目的平台外部用户 ID。
+	Content string   `json:"content"`
+	Images  []uint64 `json:"images,omitempty"`
+	seq     uint64   // 读取时保留 Core 序号，校验图片所属条目；不写入 JSON。
 }
 
 func (a *component) registerConversation(p *sdk.Plugin) {
-	p.Command("ask").Args("text").RawTail().Permission(sdk.User).Description("Ask the agent").Handle(func(c *sdk.Context, text string) error {
+	p.Command("ask").Args("text").Permission(sdk.User).Description("Ask the agent").Handle(func(c *sdk.Context, chain message.Chain) error {
 		c.StopPropagation()
-		return c.Continue(func(c *sdk.Context) error { return a.converse(c, text) })
+		return c.Continue(func(c *sdk.Context) error { return a.converse(c, chain.Text()) })
 	})
 	p.On("chat", sdk.MessageCreated).Rule(sdk.ToMe(), sdk.NotCommand()).Handle(func(c *sdk.Context) error {
 		db, err := gormdb.Open(c.Context())
@@ -69,10 +71,16 @@ func (a *component) converse(c *sdk.Context, text string) error {
 	}
 	// 快照初始化与 reset 共用会话锁；生成期间释放，由代次保护最终追加。
 	history, profile, err := a.conversationMemory(c, db, session)
-	lock.Unlock()
 	if err != nil {
+		lock.Unlock()
 		return memoryError(c, err)
 	}
+	images, err := storedImages(c.Context(), db, session, settings.ImageCount)
+	lock.Unlock()
+	if err != nil {
+		return err
+	}
+	text, currentImages := readImages(c, text)
 	request := provider.Request{MaxTokens: selected.maxTokens}
 	if persona := a.config.persona(settings.Persona); persona != nil && persona.prompt != "" {
 		request.Messages = append(request.Messages, provider.Message{Role: roleSystem, Content: persona.prompt})
@@ -81,12 +89,18 @@ func (a *component) converse(c *sdk.Context, text string) error {
 		request.Messages = append(request.Messages, provider.Message{Role: roleSystem, Content: a.skillPrompt(c.T("agent.skills.header"))})
 	}
 	for _, entry := range history {
-		request.Messages = append(request.Messages, provider.Message{Role: entry.Role, Content: entry.Content})
+		request.Messages = append(request.Messages, replayImages(entry, images, selected.imageInput))
 	}
 	if profile != "" {
 		request.Messages = append(request.Messages, provider.Message{Role: roleSystem, Content: profile})
 	}
-	request.Messages = append(request.Messages, provider.Message{Role: roleUser, Content: text})
+	currentMessage := provider.Message{Role: roleUser, Content: text}
+	if selected.imageInput {
+		currentMessage.Images = currentImages
+	} else {
+		currentMessage.Content = prependImages(text, len(currentImages))
+	}
+	request.Messages = append(request.Messages, currentMessage)
 
 	catalog, err := a.listTools(c)
 	if err != nil {
@@ -139,25 +153,13 @@ func (a *component) converse(c *sdk.Context, text string) error {
 	if c.Event().ChatType == message.ChatGroup {
 		user.Speaker = c.Event().Actor.ExternalUserID
 	}
-	userJSON, err := json.Marshal(user)
-	if err != nil {
-		return fmt.Errorf("encode user conversation entry: %w", err)
-	}
 	assistantJSON, err := json.Marshal(conversationEntry{Role: roleAssistant, Content: assistant.String()})
 	if err != nil {
 		return fmt.Errorf("encode assistant conversation entry: %w", err)
 	}
 	lock.Lock()
 	defer lock.Unlock()
-	current, err := a.settings(c.Context(), session, db)
-	if err != nil {
-		return err
-	}
-	if current.ResetGeneration != settings.ResetGeneration {
-		return nil
-	}
-	_, err = sdk.AppendConversation(c.Context(), session, userJSON, assistantJSON)
-	return err
+	return a.appendImages(c, db, settings.ResetGeneration, user, assistantJSON, currentImages)
 }
 
 // recentConversation 独立保留冻结快照，count 仅限制普通历史条数。
@@ -175,6 +177,7 @@ func recentConversation(ctx context.Context, key string, count int) ([]conversat
 			if err := json.Unmarshal(stored.Entry, &entry); err != nil {
 				return nil, fmt.Errorf("decode conversation entry %d: %w", stored.Seq, err)
 			}
+			entry.seq = stored.Seq
 			if entry.Kind == memorySnapshot {
 				snapshot = &entry
 			} else if count > 0 {

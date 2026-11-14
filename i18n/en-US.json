@@ -69,6 +69,52 @@
     },
     "llm_service_allowed_plugins": {
       "description": "Plugins allowed to generate text"
+    },
+    "providers": {
+      "templates": {
+        "openai": {
+          "items": {
+            "image_input": {
+              "description": "Image input"
+            }
+          }
+        },
+        "anthropic": {
+          "items": {
+            "image_input": {
+              "description": "Image input"
+            }
+          }
+        },
+        "gemini": {
+          "items": {
+            "image_input": {
+              "description": "Image input"
+            }
+          }
+        },
+        "deepseek": {
+          "items": {
+            "image_input": {
+              "description": "Image input"
+            }
+          }
+        },
+        "ollama": {
+          "items": {
+            "image_input": {
+              "description": "Image input"
+            }
+          }
+        },
+        "custom": {
+          "items": {
+            "image_input": {
+              "description": "Image input"
+            }
+          }
+        }
+      }
     }
   }
 }

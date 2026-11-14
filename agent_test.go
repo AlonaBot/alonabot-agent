@@ -57,6 +57,7 @@ type loopback struct {
 	operations []operation
 	changed    chan struct{} // 关闭后同时唤醒 Provider 与测试断言，随后换成新通道。
 	sequence   atomic.Uint64
+	files      map[string][]byte // 启动前填入平台文件，取件时只读。
 }
 
 func (a *loopback) Descriptor() *adapter.Descriptor {
@@ -107,7 +108,20 @@ func (a *loopback) Capabilities() []message.Capability {
 		{Name: "message.send", Version: 1, Supported: true, TextLimit: &message.TextLimit{Max: a.limit, Unit: message.TextUnicodeCodePoints}},
 		{Name: "message.edit", Version: 1, Supported: a.edit},
 		{Name: "message.buttons", Version: 1, Supported: a.buttons},
+		{Name: "media.read", Version: 1, Supported: true},
 	}
+}
+
+func (a *loopback) ReadPlatformFile(_ context.Context, fileID string, offset uint64, length uint32) ([]byte, uint64, bool, error) {
+	data, ok := a.files[fileID]
+	if !ok {
+		return nil, 0, false, fmt.Errorf("platform file not found")
+	}
+	if offset > uint64(len(data)) {
+		return nil, 0, false, fmt.Errorf("platform file offset exceeds size")
+	}
+	end := min(offset+uint64(length), uint64(len(data)))
+	return data[offset:end], end, end == uint64(len(data)), nil
 }
 
 func (a *loopback) record(method, id string, to message.Session, chain message.Chain) (*message.SendResult, *errcode.Error) {
@@ -229,12 +243,17 @@ func newLoop(edit bool, limit uint64) *loopback {
 
 func (h *harness) deliver(t *testing.T, text, user, locale string, toMe bool) {
 	t.Helper()
+	h.deliverChain(t, message.Chain{message.Text(text)}, user, locale, toMe)
+}
+
+func (h *harness) deliverChain(t *testing.T, chain message.Chain, user, locale string, toMe bool) {
+	t.Helper()
 	accepted, err := h.loop.core.Deliver(h.ctx, &message.Event{
 		Type: "message.created", Source: message.SourceAdapter, AdapterID: loopID, AdapterInstanceID: "main", AccountID: "bot", Session: loopSession, ChatType: message.ChatGroup,
-		Actor: &message.Actor{ExternalUserID: user, AdapterInstanceID: "main", Locale: locale}, Payload: &message.CreatedPayload{PlatformMessageID: fmt.Sprint(h.loop.sequence.Add(1)), Chain: message.Chain{message.Text(text)}, ToMe: toMe},
+		Actor: &message.Actor{ExternalUserID: user, AdapterInstanceID: "main", Locale: locale}, Payload: &message.CreatedPayload{PlatformMessageID: fmt.Sprint(h.loop.sequence.Add(1)), Chain: chain, ToMe: toMe},
 	}, nil)
 	if err != nil || !accepted {
-		t.Fatalf("deliver %q: accepted=%v, error=%v", text, accepted, err)
+		t.Fatalf("deliver %q: accepted=%v, error=%v", chain.Text(), accepted, err)
 	}
 }
 
@@ -250,18 +269,34 @@ func (h *harness) waitText(t *testing.T, text string) []operation {
 
 func (h *harness) entries(t *testing.T) []map[string]string {
 	t.Helper()
+	// 文本断言沿用字符串视图，原始条目读取保留 images 的数字数组。
+	var entries []map[string]string
+	for _, stored := range h.readEntries(t) {
+		entry := make(map[string]string)
+		for key, value := range stored {
+			if text, ok := value.(string); ok {
+				entry[key] = text
+			}
+		}
+		entries = append(entries, entry)
+	}
+	return entries
+}
+
+func (h *harness) readEntries(t *testing.T) []map[string]any {
+	t.Helper()
 	rows, err := h.db.QueryContext(h.ctx, "SELECT entry_json FROM conversation_entry WHERE plugin_id = ? AND conversation_key = ? ORDER BY seq", agentID, string(loopSession)+"@main")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer rows.Close()
-	var entries []map[string]string
+	var entries []map[string]any
 	for rows.Next() {
 		var raw string
 		if err := rows.Scan(&raw); err != nil {
 			t.Fatal(err)
 		}
-		var entry map[string]string
+		var entry map[string]any
 		if err := json.Unmarshal([]byte(raw), &entry); err != nil {
 			t.Fatal(err)
 		}
