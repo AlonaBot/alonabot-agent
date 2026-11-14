@@ -20,13 +20,13 @@ const taskSummaryBytes = 1024 // core.tool.confirm 的 UTF-8 字节上限。
 var agentTask = sdk.Task[AgentTask]("agent")
 
 type taskCreator struct {
-	Instance string       `json:"instance"`
-	User     message.User `json:"user"`
+	Instance string `json:"instance"`
+	User     string `json:"user"`
 }
 
 type taskTarget struct {
 	Instance  string           `json:"instance"`
-	Chat      message.Session  `json:"chat"` // 不含话题的会话地址。
+	Chat      string           `json:"chat"` // 不含话题的会话地址。
 	Thread    string           `json:"thread"`
 	TextLimit uint64           `json:"text_limit"` // 创建时的文本上限快照；0 表示无已知上限。
 	TextUnit  message.TextUnit `json:"text_unit"`  // TextLimit 的计量单位。
@@ -41,13 +41,13 @@ type AgentTask struct {
 }
 
 func currentTaskTarget(c *sdk.Context) taskTarget {
-	adapter, chat, thread, _ := c.Session().Parts()
-	return taskTarget{Instance: c.Instance(), Chat: message.NewSession(adapter, chat, ""), Thread: thread}
+	adapter, chat, thread, _ := message.ParseSID(c.Session())
+	return taskTarget{Instance: c.Instance(), Chat: message.SID(adapter, chat, ""), Thread: thread}
 }
 
-func (t taskTarget) session() message.Session {
-	adapter, chat, _, _ := t.Chat.Parts()
-	return message.NewSession(adapter, chat, t.Thread)
+func (t taskTarget) session() string {
+	adapter, chat, _, _ := message.ParseSID(t.Chat)
+	return message.SID(adapter, chat, t.Thread)
 }
 
 func (t taskTarget) sameChat(other taskTarget) bool {

@@ -18,8 +18,6 @@ import (
 	"gorm.io/gorm"
 )
 
-//go:generate go run ../cmd/alonabot build --out ../bin/generated/agent
-
 type configuredProvider struct {
 	name       string
 	client     *provider.Client
@@ -52,7 +50,7 @@ type component struct {
 // New 创建官方 Agent，绑定生成资源并登记命令、迁移和生命周期回调。
 func New() *sdk.Plugin {
 	p := sdk.NewPlugin()
-	sdk.UseGenerated(p, alonabotGenerated)
+
 	a := &component{}
 	gormdb.Migrations(p, []gormdb.Migration{{ID: 1, Up: func(ctx context.Context, tx *gorm.DB) error {
 		return tx.WithContext(ctx).AutoMigrate(&chatSettings{}, &conversationImage{})

@@ -96,10 +96,10 @@ func waitImageState(t *testing.T, h *harness, db *sql.DB, count uint64, numbers 
 	defer ticker.Stop()
 	for {
 		var storedCount uint64
-		if err := db.QueryRowContext(h.ctx, "SELECT image_count FROM chat_settings WHERE session=?", string(loopSession)+"@main").Scan(&storedCount); err != nil {
+		if err := db.QueryRowContext(h.ctx, "SELECT image_count FROM chat_settings WHERE session=?", loopSession+"@main").Scan(&storedCount); err != nil {
 			t.Fatal(err)
 		}
-		rows, err := db.QueryContext(h.ctx, "SELECT number FROM conversation_images WHERE session=? ORDER BY number", string(loopSession)+"@main")
+		rows, err := db.QueryContext(h.ctx, "SELECT number FROM conversation_images WHERE session=? ORDER BY number", loopSession+"@main")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -198,7 +198,7 @@ func TestAgentImages(t *testing.T) {
 		var mime string
 		var data []byte
 		var seq uint64
-		if err := db.QueryRowContext(h.ctx, "SELECT mime, bytes, seq FROM conversation_images WHERE session=? AND number=?", string(loopSession)+"@main", number).Scan(&mime, &data, &seq); err != nil {
+		if err := db.QueryRowContext(h.ctx, "SELECT mime, bytes, seq FROM conversation_images WHERE session=? AND number=?", loopSession+"@main", number).Scan(&mime, &data, &seq); err != nil {
 			t.Fatal(err)
 		}
 		if mime != "image/png" || !bytes.Equal(data, loop.files[fmt.Sprintf("platform-image-%d", number)]) || seq != uint64(number*2) {

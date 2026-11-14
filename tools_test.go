@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/AlonaBot/AlonaBot/agent/provider"
+	genresources "github.com/AlonaBot/AlonaBot/internal/generated"
 	"github.com/AlonaBot/AlonaBot/sdk"
 	"github.com/AlonaBot/AlonaBot/sdk/errcode"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -39,13 +40,13 @@ func toolSchema[T any]() string { typ := reflect.TypeFor[T](); return typ.PkgPat
 func toolPlugin(t *testing.T, policy sdk.ToolDefault, calls *atomic.Int32) *sdk.Plugin {
 	t.Helper()
 	p := sdk.NewPlugin()
-	sdk.UseGenerated(p, sdk.Generated{Manifest: []byte("id: " + toolPluginID + "\nname: Agent tools test\nversion: 0.1.0\nauthor: AlonaBot\nsource: github.com/AlonaBot/AlonaBot\n"), ServiceSchemas: map[string][]byte{
+	genresources.Bind(p, genresources.Resources{Manifest: []byte("id: " + toolPluginID + "\nname: Agent tools test\nversion: 0.1.0\nauthor: AlonaBot\nsource: github.com/AlonaBot/AlonaBot\n"), ServiceSchemas: map[string][]byte{
 		toolSchema[toolInput]():  []byte(`{"type":"object","properties":{"text":{"type":"string"},"fail":{"type":"boolean"}},"required":["text"]}`),
 		toolSchema[toolOutput](): []byte(`{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}`),
 	}})
 	sdk.Serve(p, sdk.JSON[toolInput, toolOutput](toolPluginID+"/echo")).Access(sdk.AccessPublic).Tool("Core echo", policy).Handle(func(c *sdk.Context, in toolInput) (toolOutput, error) {
 		calls.Add(1)
-		if string(c.User()) != "agentloop:member" || in.Text != "actual parameters" {
+		if c.User() != "agentloop:member" || in.Text != "actual parameters" {
 			return toolOutput{}, errcode.InvalidArgument.New("unexpected actor or arguments")
 		}
 		if in.Fail {

@@ -162,7 +162,7 @@ func TestAgentMemory(t *testing.T) {
 			loop.buttons = true
 			h = startAgent(t, loop, agentConfig(model.URL, provider.OpenAICompatible), nil)
 			db := memoryDatabase(t, h)
-			seedMemory(t, db, "memory", string(loopSession)+"@main", "main", "original note")
+			seedMemory(t, db, "memory", loopSession+"@main", "main", "original note")
 			seedMemory(t, db, "user", "member", "main", "private A")
 			seedMemory(t, db, "user", "other", "main", "private B")
 			// 触发器只计工具真正提交的写入；初始 fixture 不计入。
@@ -188,7 +188,7 @@ func TestAgentMemory(t *testing.T) {
 				wantProfile = append(wantProfile, "A preference")
 				writes = 1
 			}
-			if got := storedMemory(t, db, "memory", string(loopSession)+"@main", "main"); !reflect.DeepEqual(got, []string{wantNote}) {
+			if got := storedMemory(t, db, "memory", loopSession+"@main", "main"); !reflect.DeepEqual(got, []string{wantNote}) {
 				t.Fatalf("notes=%v want %s", got, wantNote)
 			}
 			if got := storedMemory(t, db, "user", "member", "main"); !reflect.DeepEqual(got, wantProfile) {

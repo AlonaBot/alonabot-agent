@@ -11,6 +11,7 @@ import (
 	"github.com/AlonaBot/AlonaBot/sdk"
 	"github.com/AlonaBot/AlonaBot/sdk/errcode"
 	"github.com/AlonaBot/AlonaBot/sdk/gormdb"
+	"github.com/AlonaBot/AlonaBot/sdk/message"
 	"gorm.io/gorm"
 )
 
@@ -45,7 +46,7 @@ type memoryRecord struct {
 // TableName 固定 Agent 受管数据库中记忆的表名。
 func (memoryRecord) TableName() string { return "memory_record" }
 
-func sessionKey(c *sdk.Context) string { return string(c.Session()) + "@" + c.Instance() }
+func sessionKey(c *sdk.Context) string { return c.Session() + "@" + c.Instance() }
 
 func memoryScope(c *sdk.Context, target string) (memoryRecord, error) {
 	record := memoryRecord{Target: target, Instance: c.Instance()}
@@ -56,8 +57,8 @@ func memoryScope(c *sdk.Context, target string) (memoryRecord, error) {
 		}
 		record.Scope = sessionKey(c)
 	case userTarget:
-		_, user, ok := c.User().Parts()
-		if !ok || record.Instance == "" {
+		_, user, err := message.ParseUID(c.User())
+		if err != nil || record.Instance == "" {
 			return record, errcode.FailedPrecondition.New("user memory requires an actor and instance")
 		}
 		record.Scope = user
