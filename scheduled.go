@@ -8,6 +8,7 @@ import (
 
 	"github.com/AlonaBot/AlonaBot/agent/provider"
 	"github.com/AlonaBot/AlonaBot/sdk"
+	"github.com/AlonaBot/AlonaBot/sdk/conversation"
 	"github.com/AlonaBot/AlonaBot/sdk/errcode"
 	"github.com/AlonaBot/AlonaBot/sdk/gormdb"
 	"github.com/AlonaBot/AlonaBot/sdk/message"
@@ -81,7 +82,7 @@ func (a *component) runScheduled(c *sdk.Context, session string, task AgentTask)
 	if err != nil {
 		return err
 	}
-	_, err = sdk.AppendConversation(c.Context(), session, userJSON, assistantJSON)
+	_, err = conversation.Append(c.Context(), session, userJSON, assistantJSON)
 	return err
 }
 

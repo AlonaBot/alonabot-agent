@@ -11,6 +11,7 @@ import (
 
 	"github.com/AlonaBot/AlonaBot/agent/provider"
 	"github.com/AlonaBot/AlonaBot/sdk"
+	conversationapi "github.com/AlonaBot/AlonaBot/sdk/conversation"
 	"github.com/AlonaBot/AlonaBot/sdk/errcode"
 	"github.com/AlonaBot/AlonaBot/sdk/gormdb"
 	"github.com/AlonaBot/AlonaBot/sdk/message"
@@ -168,7 +169,7 @@ func recentConversation(ctx context.Context, key string, count int) ([]conversat
 	var snapshot *conversationEntry
 	var from uint64
 	for {
-		entries, next, more, err := sdk.ListConversation(ctx, key, from)
+		entries, next, more, err := conversationapi.List(ctx, key, from)
 		if err != nil {
 			return nil, err
 		}

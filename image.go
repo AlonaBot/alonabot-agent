@@ -11,6 +11,8 @@ import (
 
 	"github.com/AlonaBot/AlonaBot/agent/provider"
 	"github.com/AlonaBot/AlonaBot/sdk"
+	conversationapi "github.com/AlonaBot/AlonaBot/sdk/conversation"
+	mediaapi "github.com/AlonaBot/AlonaBot/sdk/media"
 	"github.com/AlonaBot/AlonaBot/sdk/message"
 	"gorm.io/gorm"
 )
@@ -50,7 +52,7 @@ func readImage(ctx context.Context, source message.MediaSource) (provider.Image,
 	if incoming.MIME != "" && !supportedImageMIME(incoming.MIME) {
 		return provider.Image{}, fmt.Errorf("unsupported image MIME: %q", incoming.MIME)
 	}
-	reader, err := sdk.OpenMedia(ctx, source)
+	reader, err := mediaapi.Open(ctx, source)
 	if err != nil {
 		return provider.Image{}, err
 	}
@@ -153,7 +155,7 @@ func (a *component) appendImages(c *sdk.Context, db *gorm.DB, generation uint64,
 			return fmt.Errorf("encode user conversation entry: %w", err)
 		}
 		// 2. 先取得 Core 序号；后续本地失败保留已追加的文字历史。
-		last, err := sdk.AppendConversation(c.Context(), session, encoded, assistant)
+		last, err := conversationapi.Append(c.Context(), session, encoded, assistant)
 		if err != nil {
 			return err
 		}

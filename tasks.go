@@ -11,13 +11,15 @@ import (
 	"github.com/AlonaBot/AlonaBot/sdk"
 	"github.com/AlonaBot/AlonaBot/sdk/errcode"
 	"github.com/AlonaBot/AlonaBot/sdk/message"
+	taskapi "github.com/AlonaBot/AlonaBot/sdk/task"
+	toolapi "github.com/AlonaBot/AlonaBot/sdk/tool"
 )
 
 const minimumTaskInterval = 60 * time.Second
 
 const taskSummaryBytes = 1024 // core.tool.confirm 的 UTF-8 字节上限。
 
-var agentTask = sdk.Task[AgentTask]("agent")
+var agentTask = taskapi.Define[AgentTask]("agent")
 
 type taskCreator struct {
 	Instance string `json:"instance"`
@@ -117,7 +119,7 @@ func scheduleTask(c *sdk.Context, arguments json.RawMessage) string {
 			trigger += "\ntimezone: " + input.Timezone
 		}
 	}
-	if err := sdk.ConfirmOperation(c.Context(), "agent/schedule_task", taskSummary(input.Prompt, trigger)); err != nil {
+	if err := toolapi.Confirm(c.Context(), "agent/schedule_task", taskSummary(input.Prompt, trigger)); err != nil {
 		return toolResult("", err)
 	}
 	args := AgentTask{Creator: taskCreator{Instance: c.Instance(), User: c.User()}, Target: currentTaskTarget(c), Prompt: input.Prompt, CreatedAt: time.Now().UTC().Format(time.RFC3339Nano)}
@@ -134,9 +136,9 @@ func scheduleTask(c *sdk.Context, arguments json.RawMessage) string {
 	case input.Interval != 0:
 		key, err = agentTask.Every(c.Context(), interval, args)
 	case input.Cron != "":
-		var options []sdk.TaskOption
+		var options []taskapi.Option
 		if input.Timezone != "" {
-			options = append(options, sdk.Timezone(input.Timezone))
+			options = append(options, taskapi.Timezone(input.Timezone))
 		}
 		key, err = agentTask.Cron(c.Context(), input.Cron, args, options...)
 	}
@@ -203,7 +205,7 @@ func cancelTask(c *sdk.Context, arguments json.RawMessage) string {
 	if input.ID == "" {
 		return toolResult("", errcode.InvalidArgument.New("id is required"))
 	}
-	if err := sdk.ConfirmOperation(c.Context(), "agent/cancel_task", string(arguments)); err != nil {
+	if err := toolapi.Confirm(c.Context(), "agent/cancel_task", string(arguments)); err != nil {
 		return toolResult("", err)
 	}
 	instances, err := agentTask.List(c.Context())

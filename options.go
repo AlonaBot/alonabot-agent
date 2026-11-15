@@ -5,13 +5,13 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/AlonaBot/AlonaBot/sdk"
+	"github.com/AlonaBot/AlonaBot/sdk/options"
 )
 
 const providersServiceName = "llm.providers"
 
-func (a *component) providers(_ context.Context, q sdk.OptionsQuery) (sdk.OptionsPage, error) {
-	page := sdk.OptionsPage{Options: []sdk.Option{}}
+func (a *component) providers(_ context.Context, q options.Query) (options.Page, error) {
+	page := options.Page{Options: []options.Option{}}
 	search := strings.ToLower(q.Search)
 	for _, selected := range a.config.providers {
 		if len(q.Values) > 0 {
@@ -25,7 +25,7 @@ func (a *component) providers(_ context.Context, q sdk.OptionsQuery) (sdk.Option
 			page.More = true
 			break
 		}
-		page.Options = append(page.Options, sdk.Option{Value: selected.name, Label: selected.name, Description: string(selected.protocol) + " " + selected.model})
+		page.Options = append(page.Options, options.Option{Value: selected.name, Label: selected.name, Description: string(selected.protocol) + " " + selected.model})
 	}
 	return page, nil
 }

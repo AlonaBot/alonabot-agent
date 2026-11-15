@@ -13,6 +13,7 @@ import (
 	"github.com/AlonaBot/AlonaBot/agent/provider"
 	"github.com/AlonaBot/AlonaBot/sdk"
 	"github.com/AlonaBot/AlonaBot/sdk/errcode"
+	toolapi "github.com/AlonaBot/AlonaBot/sdk/tool"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -38,7 +39,7 @@ type toolCatalog struct {
 }
 
 func (a *component) listTools(c *sdk.Context) (toolCatalog, error) {
-	core, err := sdk.ListTools(c.Context())
+	core, err := toolapi.List(c.Context())
 	if err != nil {
 		return toolCatalog{}, err
 	}
@@ -132,11 +133,11 @@ func (t roundTool) invoke(ctx context.Context, arguments json.RawMessage) string
 		return t.local(arguments)
 	}
 	if t.peer == nil {
-		result, err := sdk.InvokeTool(ctx, t.original, arguments)
+		result, err := toolapi.Invoke(ctx, t.original, arguments)
 		return toolResult(string(result), err)
 	}
 	// 参数原文完整展示，确认成功后再发出唯一一次 tools/call。
-	if err := sdk.ConfirmOperation(ctx, t.original, string(arguments)); err != nil {
+	if err := toolapi.Confirm(ctx, t.original, string(arguments)); err != nil {
 		return toolResult("", err)
 	}
 	if err := ctx.Err(); err != nil {

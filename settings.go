@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/AlonaBot/AlonaBot/sdk"
+	conversationapi "github.com/AlonaBot/AlonaBot/sdk/conversation"
 	"github.com/AlonaBot/AlonaBot/sdk/gormdb"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -92,7 +93,7 @@ func (a *component) resetConversation(c *sdk.Context) error {
 		return err
 	}
 	session := sessionKey(c)
-	if err := sdk.ClearConversation(c.Context(), session); err != nil {
+	if err := conversationapi.Clear(c.Context(), session); err != nil {
 		return err
 	}
 	db, err := gormdb.Open(c.Context())

@@ -21,6 +21,8 @@ import (
 	genresources "github.com/AlonaBot/AlonaBot/internal/generated"
 	"github.com/AlonaBot/AlonaBot/sdk"
 	"github.com/AlonaBot/AlonaBot/sdk/errcode"
+	"github.com/AlonaBot/AlonaBot/sdk/service"
+	toolapi "github.com/AlonaBot/AlonaBot/sdk/tool"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -37,14 +39,14 @@ type toolOutput struct {
 
 func toolSchema[T any]() string { typ := reflect.TypeFor[T](); return typ.PkgPath() + "." + typ.Name() }
 
-func toolPlugin(t *testing.T, policy sdk.ToolDefault, calls *atomic.Int32) *sdk.Plugin {
+func toolPlugin(t *testing.T, policy toolapi.Default, calls *atomic.Int32) *sdk.Plugin {
 	t.Helper()
 	p := sdk.NewPlugin()
 	genresources.Bind(p, genresources.Resources{Manifest: []byte("id: " + toolPluginID + "\nname: Agent tools test\nversion: 0.1.0\nauthor: AlonaBot\nsource: github.com/AlonaBot/AlonaBot\n"), ServiceSchemas: map[string][]byte{
 		toolSchema[toolInput]():  []byte(`{"type":"object","properties":{"text":{"type":"string"},"fail":{"type":"boolean"}},"required":["text"]}`),
 		toolSchema[toolOutput](): []byte(`{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}`),
 	}})
-	sdk.Serve(p, sdk.JSON[toolInput, toolOutput](toolPluginID+"/echo")).Access(sdk.AccessPublic).Tool("Core echo", policy).Handle(func(c *sdk.Context, in toolInput) (toolOutput, error) {
+	service.Serve(p, service.JSON[toolInput, toolOutput](toolPluginID+"/echo")).Access(service.AccessPublic).Tool("Core echo", policy).Handle(func(c *sdk.Context, in toolInput) (toolOutput, error) {
 		calls.Add(1)
 		if c.User() != "agentloop:member" || in.Text != "actual parameters" {
 			return toolOutput{}, errcode.InvalidArgument.New("unexpected actor or arguments")
@@ -197,7 +199,7 @@ func TestAgentTools(t *testing.T) {
 			configuration["mcp_servers"] = []any{serverConfig}
 			loop := newLoop(false, 1024)
 			loop.buttons = true
-			h := startAgent(t, loop, configuration, nil, toolPlugin(t, sdk.ToolConfirm, &coreCalls))
+			h := startAgent(t, loop, configuration, nil, toolPlugin(t, toolapi.DefaultConfirm, &coreCalls))
 			h.deliver(t, "/ask tools", "member", "en-US", false)
 			coreConfirmation := h.confirmation(t, 0)
 			if !strings.Contains(coreConfirmation.text, toolPluginID+"/echo") || !strings.Contains(coreConfirmation.text, "actual parameters") {

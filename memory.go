@@ -9,9 +9,12 @@ import (
 	"unicode/utf8"
 
 	"github.com/AlonaBot/AlonaBot/sdk"
+	"github.com/AlonaBot/AlonaBot/sdk/conversation"
 	"github.com/AlonaBot/AlonaBot/sdk/errcode"
 	"github.com/AlonaBot/AlonaBot/sdk/gormdb"
 	"github.com/AlonaBot/AlonaBot/sdk/message"
+	"github.com/AlonaBot/AlonaBot/sdk/service"
+	"github.com/AlonaBot/AlonaBot/sdk/tool"
 	"gorm.io/gorm"
 )
 
@@ -74,9 +77,9 @@ func readMemory(db *gorm.DB, scope memoryRecord) (memoryRecord, error) {
 }
 
 func registerMemory(p *sdk.Plugin) {
-	sdk.Serve(p, sdk.JSON[memoryRequest, memoryResponse](memoryTool)).
-		Access(sdk.AccessPrivate).
-		Tool("Update chat notes or the current user's profile with ordered add, patch, or remove operations. patch and remove require old_text matching exactly one entry. The whole group is atomic.", sdk.ToolAllow).
+	service.Serve(p, service.JSON[memoryRequest, memoryResponse](memoryTool)).
+		Access(service.AccessPrivate).
+		Tool("Update chat notes or the current user's profile with ordered add, patch, or remove operations. patch and remove require old_text matching exactly one entry. The whole group is atomic.", tool.DefaultAllow).
 		Handle(func(c *sdk.Context, in memoryRequest) (memoryResponse, error) {
 			if len(in.Operations) == 0 {
 				return memoryResponse{}, errcode.InvalidArgument.New("memory operations must not be empty")
@@ -194,7 +197,7 @@ func (a *component) conversationMemory(c *sdk.Context, db *gorm.DB, key string) 
 	if err != nil {
 		return nil, "", err
 	}
-	entries, _, _, err := sdk.ListConversation(c.Context(), key, 0)
+	entries, _, _, err := conversation.List(c.Context(), key, 0)
 	if err != nil {
 		return nil, "", err
 	}
@@ -207,7 +210,7 @@ func (a *component) conversationMemory(c *sdk.Context, db *gorm.DB, key string) 
 		if err != nil {
 			return nil, "", fmt.Errorf("encode memory snapshot: %w", err)
 		}
-		if _, err := sdk.AppendConversation(c.Context(), key, encoded); err != nil {
+		if _, err := conversation.Append(c.Context(), key, encoded); err != nil {
 			return nil, "", err
 		}
 	}
