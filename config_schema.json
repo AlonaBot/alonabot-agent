@@ -35,22 +35,6 @@
             "type": "string",
             "description": "API key",
             "secret": true
-          },
-          "model": {
-            "type": "string",
-            "description": "Model",
-            "required": true
-          },
-          "max_tokens": {
-            "type": "int",
-            "description": "Maximum output tokens",
-            "hint": "Must be at least 1.",
-            "default": 2048
-          },
-          "image_input": {
-            "type": "bool",
-            "description": "Image input",
-            "default": false
           }
         }
       },
@@ -85,22 +69,6 @@
             "type": "string",
             "description": "API key",
             "secret": true
-          },
-          "model": {
-            "type": "string",
-            "description": "Model",
-            "required": true
-          },
-          "max_tokens": {
-            "type": "int",
-            "description": "Maximum output tokens",
-            "hint": "Must be at least 1.",
-            "default": 2048
-          },
-          "image_input": {
-            "type": "bool",
-            "description": "Image input",
-            "default": false
           }
         }
       },
@@ -135,22 +103,6 @@
             "type": "string",
             "description": "API key",
             "secret": true
-          },
-          "model": {
-            "type": "string",
-            "description": "Model",
-            "required": true
-          },
-          "max_tokens": {
-            "type": "int",
-            "description": "Maximum output tokens",
-            "hint": "Must be at least 1.",
-            "default": 2048
-          },
-          "image_input": {
-            "type": "bool",
-            "description": "Image input",
-            "default": false
           }
         }
       },
@@ -185,22 +137,6 @@
             "type": "string",
             "description": "API key",
             "secret": true
-          },
-          "model": {
-            "type": "string",
-            "description": "Model",
-            "required": true
-          },
-          "max_tokens": {
-            "type": "int",
-            "description": "Maximum output tokens",
-            "hint": "Must be at least 1.",
-            "default": 2048
-          },
-          "image_input": {
-            "type": "bool",
-            "description": "Image input",
-            "default": false
           }
         }
       },
@@ -235,22 +171,6 @@
             "type": "string",
             "description": "API key",
             "secret": true
-          },
-          "model": {
-            "type": "string",
-            "description": "Model",
-            "required": true
-          },
-          "max_tokens": {
-            "type": "int",
-            "description": "Maximum output tokens",
-            "hint": "Must be at least 1.",
-            "default": 2048
-          },
-          "image_input": {
-            "type": "bool",
-            "description": "Image input",
-            "default": false
           }
         }
       },
@@ -285,31 +205,10 @@
             "type": "string",
             "description": "API key",
             "secret": true
-          },
-          "model": {
-            "type": "string",
-            "description": "Model",
-            "required": true
-          },
-          "max_tokens": {
-            "type": "int",
-            "description": "Maximum output tokens",
-            "hint": "Must be at least 1.",
-            "default": 2048
-          },
-          "image_input": {
-            "type": "bool",
-            "description": "Image input",
-            "default": false
           }
         }
       }
     }
-  },
-  "default_provider": {
-    "type": "string",
-    "description": "Default provider",
-    "options_from": {"source": "@agent/llm.providers"}
   },
   "personas": {
     "type": "list",
@@ -428,6 +327,69 @@
   "llm_service_allowed_plugins": {
     "type": "list",
     "description": "Plugins allowed to generate text",
-    "default": ["*"]
+    "default": [
+      "*"
+    ]
+  },
+  "chat_model": {
+    "type": "string",
+    "description": "Chat model",
+    "options_from": {
+      "source": "@agent/llm.models",
+      "filter": {
+        "type": "chat"
+      }
+    }
+  },
+  "models": {
+    "type": "list",
+    "description": "Models",
+    "items": {
+      "name": {
+        "type": "string",
+        "description": "Name",
+        "required": true
+      },
+      "provider": {
+        "type": "string",
+        "description": "Provider",
+        "required": true
+      },
+      "model": {
+        "type": "string",
+        "description": "Model ID",
+        "required": true
+      },
+      "type": {
+        "type": "string",
+        "description": "Model type",
+        "options": [
+          "chat",
+          "speech_to_text",
+          "text_to_speech",
+          "embedding",
+          "rerank",
+          "decision"
+        ],
+        "default": "chat"
+      },
+      "max_tokens": {
+        "type": "int",
+        "description": "Maximum output tokens",
+        "hint": "Must be at least 1.",
+        "default": 2048,
+        "condition": {
+          "type": "chat"
+        }
+      },
+      "image_input": {
+        "type": "bool",
+        "description": "Image input",
+        "default": false,
+        "condition": {
+          "type": "chat"
+        }
+      }
+    }
   }
 }

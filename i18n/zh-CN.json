@@ -6,19 +6,19 @@
   "messages": {
     "agent.skills.header": "可用技能（使用 load_skill 读取技能）：",
     "agent.memory_error": "记忆读取失败（{code}）。",
-    "agent.no_provider": "请管理员配置并选择 Provider。",
     "agent.error": "Provider 请求失败（{code}）。",
     "agent.enabled": "已开启自由对话。",
     "agent.disabled": "已关闭自由对话。",
     "agent.personas": "人格：{names}",
-    "agent.providers": "Provider：{names}",
     "agent.persona_selected": "已选择人格：{name}",
-    "agent.provider_selected": "已选择 Provider：{name}",
     "agent.unknown_persona": "找不到人格：{name}",
-    "agent.unknown_provider": "找不到 Provider：{name}",
     "agent.reset": "已清除会话历史。",
     "agent.tool_limit": "已达到本轮工具调用上限，本轮对话已结束。",
-    "agent.tools_error": "工具目录请求失败（{code}）。"
+    "agent.tools_error": "工具目录请求失败（{code}）。",
+    "agent.no_model": "请管理员配置并选择对话模型。",
+    "agent.models": "模型：{names}",
+    "agent.model_selected": "已选择模型：{name}",
+    "agent.unknown_model": "找不到对话模型：{name}"
   },
   "commands": {
     "ask": {
@@ -34,7 +34,7 @@
       "description": "列出或选择人格"
     },
     "provider": {
-      "description": "列出或选择 Provider"
+      "description": "列出或选择对话模型"
     },
     "reset": {
       "description": "清除本聊天的会话历史"
@@ -62,16 +62,6 @@
             },
             "api_key": {
               "description": "API 密钥"
-            },
-            "model": {
-              "description": "模型"
-            },
-            "max_tokens": {
-              "description": "最大输出 token 数",
-              "hint": "至少为 1。"
-            },
-            "image_input": {
-              "description": "图片输入"
             }
           }
         },
@@ -89,16 +79,6 @@
             },
             "api_key": {
               "description": "API 密钥"
-            },
-            "model": {
-              "description": "模型"
-            },
-            "max_tokens": {
-              "description": "最大输出 token 数",
-              "hint": "至少为 1。"
-            },
-            "image_input": {
-              "description": "图片输入"
             }
           }
         },
@@ -116,16 +96,6 @@
             },
             "api_key": {
               "description": "API 密钥"
-            },
-            "model": {
-              "description": "模型"
-            },
-            "max_tokens": {
-              "description": "最大输出 token 数",
-              "hint": "至少为 1。"
-            },
-            "image_input": {
-              "description": "图片输入"
             }
           }
         },
@@ -143,16 +113,6 @@
             },
             "api_key": {
               "description": "API 密钥"
-            },
-            "model": {
-              "description": "模型"
-            },
-            "max_tokens": {
-              "description": "最大输出 token 数",
-              "hint": "至少为 1。"
-            },
-            "image_input": {
-              "description": "图片输入"
             }
           }
         },
@@ -170,16 +130,6 @@
             },
             "api_key": {
               "description": "API 密钥"
-            },
-            "model": {
-              "description": "模型"
-            },
-            "max_tokens": {
-              "description": "最大输出 token 数",
-              "hint": "至少为 1。"
-            },
-            "image_input": {
-              "description": "图片输入"
             }
           }
         },
@@ -197,23 +147,10 @@
             },
             "api_key": {
               "description": "API 密钥"
-            },
-            "model": {
-              "description": "模型"
-            },
-            "max_tokens": {
-              "description": "最大输出 token 数",
-              "hint": "至少为 1。"
-            },
-            "image_input": {
-              "description": "图片输入"
             }
           }
         }
       }
-    },
-    "default_provider": {
-      "description": "默认 Provider"
     },
     "personas": {
       "description": "人格",
@@ -276,6 +213,33 @@
     },
     "llm_service_allowed_plugins": {
       "description": "允许生成文本的插件"
+    },
+    "chat_model": {
+      "description": "对话模型"
+    },
+    "models": {
+      "description": "模型",
+      "items": {
+        "name": {
+          "description": "名称"
+        },
+        "provider": {
+          "description": "提供商"
+        },
+        "model": {
+          "description": "模型 ID"
+        },
+        "type": {
+          "description": "模型类型"
+        },
+        "max_tokens": {
+          "description": "最大输出 token 数",
+          "hint": "至少为 1。"
+        },
+        "image_input": {
+          "description": "图片输入"
+        }
+      }
     }
   }
 }

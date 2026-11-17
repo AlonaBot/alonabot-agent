@@ -6,19 +6,19 @@
   "messages": {
     "agent.skills.header": "Available skills (use load_skill to read a skill):",
     "agent.memory_error": "Memory could not be read ({code}).",
-    "agent.no_provider": "Ask an administrator to configure and select a provider.",
     "agent.error": "The provider request failed ({code}).",
     "agent.enabled": "Free conversation is on.",
     "agent.disabled": "Free conversation is off.",
     "agent.personas": "Personas: {names}",
-    "agent.providers": "Providers: {names}",
     "agent.persona_selected": "Persona selected: {name}",
-    "agent.provider_selected": "Provider selected: {name}",
     "agent.unknown_persona": "Unknown persona: {name}",
-    "agent.unknown_provider": "Unknown provider: {name}",
     "agent.reset": "Conversation cleared.",
     "agent.tool_limit": "The tool call limit has been reached. This conversation turn has ended.",
-    "agent.tools_error": "The tool directory request failed ({code})."
+    "agent.tools_error": "The tool directory request failed ({code}).",
+    "agent.no_model": "Ask an administrator to configure and select a chat model.",
+    "agent.models": "Models: {names}",
+    "agent.model_selected": "Model selected: {name}",
+    "agent.unknown_model": "Unknown chat model: {name}"
   },
   "config": {
     "skills_dir": {
@@ -73,46 +73,49 @@
     "providers": {
       "templates": {
         "openai": {
-          "items": {
-            "image_input": {
-              "description": "Image input"
-            }
-          }
+          "items": {}
         },
         "anthropic": {
-          "items": {
-            "image_input": {
-              "description": "Image input"
-            }
-          }
+          "items": {}
         },
         "gemini": {
-          "items": {
-            "image_input": {
-              "description": "Image input"
-            }
-          }
+          "items": {}
         },
         "deepseek": {
-          "items": {
-            "image_input": {
-              "description": "Image input"
-            }
-          }
+          "items": {}
         },
         "ollama": {
-          "items": {
-            "image_input": {
-              "description": "Image input"
-            }
-          }
+          "items": {}
         },
         "custom": {
-          "items": {
-            "image_input": {
-              "description": "Image input"
-            }
-          }
+          "items": {}
+        }
+      }
+    },
+    "chat_model": {
+      "description": "Chat model"
+    },
+    "models": {
+      "description": "Models",
+      "items": {
+        "name": {
+          "description": "Name"
+        },
+        "provider": {
+          "description": "Provider"
+        },
+        "model": {
+          "description": "Model ID"
+        },
+        "type": {
+          "description": "Model type"
+        },
+        "max_tokens": {
+          "description": "Maximum output tokens",
+          "hint": "Must be at least 1."
+        },
+        "image_input": {
+          "description": "Image input"
         }
       }
     }

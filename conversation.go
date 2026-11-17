@@ -65,10 +65,10 @@ func (a *component) converse(c *sdk.Context, text string) error {
 		lock.Unlock()
 		return err
 	}
-	selected := a.config.provider(settings.Provider)
-	if selected == nil {
+	selected := a.config.model(settings.Model)
+	if selected == nil || selected.modelType != modelChat {
 		lock.Unlock()
-		return c.Reply(c.T("agent.no_provider"))
+		return c.Reply(c.T("agent.no_model"))
 	}
 	// 快照初始化与 reset 共用会话锁；生成期间释放，由代次保护最终追加。
 	history, profile, err := a.conversationMemory(c, db, session)

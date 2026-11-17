@@ -32,16 +32,16 @@ func (a *component) generate(c *sdk.Context, req llm.Request) (llm.Response, err
 	if req.MaxOutputTokens < 0 {
 		return llm.Response{}, errcode.InvalidArgument.New("max_output_tokens must be non-negative")
 	}
-	if len(a.config.providers) == 0 {
-		return llm.Response{}, errcode.FailedPrecondition.New("no provider is configured")
-	}
-	name := req.Provider
+	name := req.Model
 	if name == "" {
-		name = a.config.defaultProvider
+		name = a.config.chatModel
+		if name == "" {
+			return llm.Response{}, errcode.FailedPrecondition.New("no chat model is configured")
+		}
 	}
-	selected := a.config.provider(name)
-	if selected == nil {
-		return llm.Response{}, errcode.InvalidArgument.New("unknown provider")
+	selected := a.config.model(name)
+	if selected == nil || selected.modelType != modelChat {
+		return llm.Response{}, errcode.InvalidArgument.New("unknown chat model")
 	}
 
 	// 2. 独立组装文本请求，Provider 复用已有协议转换和流终止判断。
@@ -61,7 +61,7 @@ func (a *component) generate(c *sdk.Context, req llm.Request) (llm.Response, err
 		text.WriteString(event.Text)
 		return nil
 	})
-	fields := []any{"caller_plugin_id", caller, "provider", selected.name, "model", selected.model, "duration_ms", time.Since(started).Milliseconds()}
+	fields := []any{"caller_plugin_id", caller, "provider", selected.provider.name, "model", selected.model, "duration_ms", time.Since(started).Milliseconds()}
 	if result.Usage != nil {
 		fields = append(fields, "input_tokens", result.Usage.InputTokens, "output_tokens", result.Usage.OutputTokens)
 	}
@@ -72,7 +72,7 @@ func (a *component) generate(c *sdk.Context, req llm.Request) (llm.Response, err
 	c.Logger().DebugContext(c.Context(), "provider generation completed", fields...)
 
 	// 3. nil 用量保持缺失，有用量时通过指针保留零值。
-	response := llm.Response{Text: text.String(), Provider: selected.name, Model: selected.model}
+	response := llm.Response{Text: text.String(), Model: selected.name}
 	if result.Usage != nil {
 		response.InputTokens = &result.Usage.InputTokens
 		response.OutputTokens = &result.Usage.OutputTokens

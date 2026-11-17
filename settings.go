@@ -17,7 +17,7 @@ const sessionLockCount = 64 // 固定分段锁，内存占用不随会话数量�
 
 type chatSettings struct {
 	Session         string `gorm:"primaryKey;autoIncrement:false"`
-	Provider        string
+	Model           string
 	Persona         string
 	Enabled         bool
 	ResetGeneration uint64 // reset 前开始的轮次按此代次跳过历史追加。
@@ -38,7 +38,7 @@ func (a *component) settings(ctx context.Context, session string, db *gorm.DB) (
 		return settings, query.Error
 	}
 	if query.RowsAffected == 0 {
-		return chatSettings{Session: session, Provider: a.config.defaultProvider, Persona: a.config.defaultPersona}, nil
+		return chatSettings{Session: session, Model: a.config.chatModel, Persona: a.config.defaultPersona}, nil
 	}
 	return settings, nil
 }
@@ -74,7 +74,7 @@ func (a *component) registerCommands(p *sdk.Plugin) {
 		return c.Reply(c.T("agent.disabled"))
 	})
 	p.Command("persona").Args("name").Optional("name").Permission(sdk.Admin).Description("List or select a persona").Handle(a.selectPersona)
-	p.Command("provider").Args("name").Optional("name").Permission(sdk.Admin).Description("List or select a provider").Handle(a.selectProvider)
+	p.Command("provider").Args("name").Optional("name").Permission(sdk.Admin).Description("List or select a chat model").Handle(a.selectModel)
 	p.Command("reset").Permission(sdk.User).Description("Clear this conversation").Handle(func(c *sdk.Context) error {
 		c.StopPropagation()
 		if err := a.resetConversation(c); err != nil {
@@ -126,20 +126,22 @@ func (a *component) selectPersona(c *sdk.Context, name string) error {
 	return c.Reply(c.T("agent.persona_selected", "name", name))
 }
 
-func (a *component) selectProvider(c *sdk.Context, name string) error {
+func (a *component) selectModel(c *sdk.Context, name string) error {
 	c.StopPropagation()
 	if name == "" {
-		names := make([]string, len(a.config.providers))
-		for i, provider := range a.config.providers {
-			names[i] = provider.name
+		var names []string
+		for _, model := range a.config.models {
+			if model.modelType == modelChat {
+				names = append(names, model.name)
+			}
 		}
-		return c.Reply(c.T("agent.providers", "names", strings.Join(names, ", ")))
+		return c.Reply(c.T("agent.models", "names", strings.Join(names, ", ")))
 	}
-	if a.config.provider(name) == nil {
-		return c.Reply(c.T("agent.unknown_provider", "name", name))
+	if selected := a.config.model(name); selected == nil || selected.modelType != modelChat {
+		return c.Reply(c.T("agent.unknown_model", "name", name))
 	}
-	if err := a.updateSettings(c, func(s *chatSettings) { s.Provider = name }); err != nil {
+	if err := a.updateSettings(c, func(s *chatSettings) { s.Model = name }); err != nil {
 		return err
 	}
-	return c.Reply(c.T("agent.provider_selected", "name", name))
+	return c.Reply(c.T("agent.model_selected", "name", name))
 }

@@ -150,7 +150,7 @@ func TestAgentImages(t *testing.T) {
 		urls = append(urls, "data:image/png;base64,"+base64.StdEncoding.EncodeToString(data))
 	}
 	configuration := agentConfig(server.URL, provider.OpenAI)
-	configuration["providers"].([]any)[0].(map[string]any)["custom"].(map[string]any)["image_input"] = true
+	configuration["models"].([]any)[0].(map[string]any)["image_input"] = true
 	h := startAgent(t, loop, configuration, nil)
 	db := imageDatabase(t, h)
 	h.deliver(t, "/agent on", "admin", "en-US", false)

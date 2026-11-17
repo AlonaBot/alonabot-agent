@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"sync"
 
 	"github.com/AlonaBot/AlonaBot/agent/provider"
@@ -23,9 +24,17 @@ import (
 
 type configuredProvider struct {
 	name       string
+	connection provider.Config
+}
+
+const modelChat = "chat"
+
+type configuredModel struct {
+	name       string
+	provider   *configuredProvider
+	modelType  string
 	client     *provider.Client
 	maxTokens  int
-	protocol   provider.Protocol
 	model      string
 	imageInput bool
 }
@@ -34,8 +43,9 @@ type persona struct{ name, prompt string }
 
 type configuration struct {
 	providers                []configuredProvider
+	models                   []configuredModel
 	personas                 []persona
-	defaultProvider          string
+	chatModel                string
 	defaultPersona           string
 	historyEntries           int
 	mcpServers               []mcpServer
@@ -77,42 +87,78 @@ func New() *sdk.Plugin {
 	task.On(p, agentTask).Handle(a.scheduled)
 	registerMemory(p)
 	service.Serve(p, llm.GenerateService).Access(service.AccessPublic).Handle(a.generate)
-	options.Serve(p, providersServiceName, a.providers)
+	options.Serve(p, modelsServiceName, a.models)
 	return p
 }
 
 func readConfiguration(values config.Values) (configuration, error) {
-	// 1. 在配置边界验证名称、密钥与连接参数，客户端复用进程的代理环境。
-	result := configuration{defaultProvider: values.String("default_provider"), defaultPersona: values.String("default_persona"), historyEntries: int(values.Int("history_entries"))}
+	// 1. 提供商只保存连接与密钥，模型引用同一份配置。
+	result := configuration{chatModel: values.String("chat_model"), defaultPersona: values.String("default_persona"), historyEntries: int(values.Int("history_entries"))}
 	result.llmServiceAllowedPlugins = values.Strings("llm_service_allowed_plugins")
 	result.skillsDir = values.String("skills_dir")
 	names := make(map[string]bool)
-	for _, item := range values.TemplateList("providers") {
+	for i, item := range values.TemplateList("providers") {
+		path := fmt.Sprintf("$.providers[%d].%s", i, item.Key())
 		name := item.String("name")
 		if names[name] {
-			return configuration{}, fmt.Errorf("provider names must be unique")
+			return configuration{}, fmt.Errorf("%s.name: provider names must be unique", path)
 		}
 		names[name] = true
-		if item.Int("max_tokens") < 1 {
-			return configuration{}, fmt.Errorf("provider max_tokens must be at least 1")
+		connection := provider.Config{Protocol: provider.Protocol(item.String("protocol")), BaseURL: item.String("base_url"), APIKey: item.String("api_key")}
+		baseURL, err := url.Parse(connection.BaseURL)
+		if err != nil || baseURL.Host == "" || (baseURL.Scheme != "http" && baseURL.Scheme != "https") || baseURL.User != nil || baseURL.RawQuery != "" || baseURL.Fragment != "" {
+			return configuration{}, fmt.Errorf("%s.base_url: must be HTTP(S) without credentials, query, or fragment", path)
 		}
-		client, err := provider.New(provider.Config{Protocol: provider.Protocol(item.String("protocol")), BaseURL: item.String("base_url"), APIKey: item.String("api_key"), Model: item.String("model")}, &http.Client{})
-		if err != nil {
-			return configuration{}, fmt.Errorf("configure provider: %w", err)
+		if connection.APIKey == "" && connection.Protocol != provider.OllamaChat {
+			return configuration{}, fmt.Errorf("%s.api_key: API key is required", path)
 		}
-		result.providers = append(result.providers, configuredProvider{name: name, client: client, maxTokens: int(item.Int("max_tokens")), protocol: provider.Protocol(item.String("protocol")), model: item.String("model"), imageInput: item.Bool("image_input")})
+		result.providers = append(result.providers, configuredProvider{name: name, connection: connection})
 	}
-	if (result.defaultProvider != "" || len(names) > 0) && !names[result.defaultProvider] {
-		return configuration{}, fmt.Errorf("default_provider must name a configured provider")
+	// 2. 模型名称独立去重，先验证引用与类型，再为 chat 构造客户端。
+	clear(names)
+	for i, item := range values.Objects("models") {
+		path := fmt.Sprintf("$.models[%d]", i)
+		name := item.String("name")
+		if names[name] {
+			return configuration{}, fmt.Errorf("%s.name: model names must be unique", path)
+		}
+		names[name] = true
+		selected := configuredModel{name: name, provider: result.provider(item.String("provider")), model: item.String("model"), modelType: item.String("type")}
+		if selected.provider == nil {
+			return configuration{}, fmt.Errorf("%s.provider: must name a configured provider", path)
+		}
+		connection := selected.provider.connection
+		if selected.modelType == modelChat {
+			selected.maxTokens = int(item.Int("max_tokens"))
+			selected.imageInput = item.Bool("image_input")
+			if selected.maxTokens < 1 {
+				return configuration{}, fmt.Errorf("%s.max_tokens: must be at least 1", path)
+			}
+			connection.Model = selected.model
+			client, err := provider.New(connection, &http.Client{})
+			if err != nil {
+				return configuration{}, fmt.Errorf("%s: configure model: %w", path, err)
+			}
+			selected.client = client
+		} else if connection.Protocol != provider.OpenAI && connection.Protocol != provider.OpenAICompatible {
+			return configuration{}, fmt.Errorf("%s.type: model type requires openai or openai-compatible protocol", path)
+		}
+		result.models = append(result.models, selected)
 	}
-	// 2. 校验默认人格的引用；没有人格时允许留空。
+	if result.chatModel != "" {
+		selected := result.model(result.chatModel)
+		if selected == nil || selected.modelType != modelChat {
+			return configuration{}, fmt.Errorf("$.chat_model: must name a configured chat model")
+		}
+	}
+	// 3. 校验默认人格的引用；没有人格时允许留空。
 	for _, item := range values.Objects("personas") {
 		result.personas = append(result.personas, persona{name: item.String("name"), prompt: item.String("prompt")})
 	}
 	if (result.defaultPersona != "" || len(result.personas) > 0) && result.persona(result.defaultPersona) == nil {
 		return configuration{}, fmt.Errorf("default_persona must name a configured persona")
 	}
-	// 3. MCP 仅校验当前传输使用的字段；凭证已经过 SDK secret 解析。
+	// 4. MCP 仅校验当前传输使用的字段；凭证已经过 SDK secret 解析。
 	servers, err := readMCPServers(values)
 	if err != nil {
 		return configuration{}, err
@@ -125,6 +171,15 @@ func (s *configuration) provider(name string) *configuredProvider {
 	for i := range s.providers {
 		if s.providers[i].name == name {
 			return &s.providers[i]
+		}
+	}
+	return nil
+}
+
+func (s *configuration) model(name string) *configuredModel {
+	for i := range s.models {
+		if s.models[i].name == name {
+			return &s.models[i]
 		}
 	}
 	return nil

@@ -37,9 +37,9 @@ func (a *component) runScheduled(c *sdk.Context, session string, task AgentTask)
 	if err != nil {
 		return err
 	}
-	selected := a.config.provider(settings.Provider)
-	if selected == nil {
-		return fmt.Errorf("scheduled task has no configured provider")
+	selected := a.config.model(settings.Model)
+	if selected == nil || selected.modelType != modelChat {
+		return fmt.Errorf("scheduled task has no configured chat model")
 	}
 	history, err := recentConversation(c.Context(), session, a.config.historyEntries)
 	if err != nil {

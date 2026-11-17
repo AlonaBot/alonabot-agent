@@ -13,7 +13,7 @@ const toolStepLimit = 20 // 按单轮实际提交执行的 ToolCall 计数，同
 
 var errToolLimit = errors.New("tool call limit reached")
 
-func runToolLoop(ctx context.Context, selected *configuredProvider, request provider.Request, catalog toolCatalog, emit func(string) error) error {
+func runToolLoop(ctx context.Context, selected *configuredModel, request provider.Request, catalog toolCatalog, emit func(string) error) error {
 	request.Tools = catalog.definitions
 	steps := 0
 	for {
