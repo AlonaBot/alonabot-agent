@@ -85,11 +85,14 @@ func (a *component) converse(c *sdk.Context, text string) error {
 		}
 	}
 	var prefix []provider.Message
-	if persona := a.config.persona(c.Config().String("default_persona")); persona != nil && persona.prompt != "" {
-		prefix = append(prefix, provider.Message{Role: roleSystem, Content: persona.prompt})
+	prompt, err := a.personaPrompt(c, c.Config().String("default_persona"))
+	if err != nil {
+		return err
 	}
-	if len(a.skills) > 0 {
-		prefix = append(prefix, provider.Message{Role: roleSystem, Content: a.skillPrompt(c.T("agent.skills.header"))})
+	prefix = append(prefix, provider.Message{Role: roleSystem, Content: prompt})
+	skills, _ := a.skillSnapshot()
+	if len(skills) > 0 {
+		prefix = append(prefix, provider.Message{Role: roleSystem, Content: skillPrompt(skills, c.T("agent.skills.header"))})
 	}
 	captionName := c.Config().String("image_caption_model")
 	captionModel := a.config.model(captionName)
@@ -124,7 +127,7 @@ func (a *component) converse(c *sdk.Context, text string) error {
 		return request
 	}
 
-	catalog, err := a.listTools(c)
+	catalog, err := a.listTools(c, skills)
 	if err != nil {
 		if c.Err() != nil {
 			return c.Err()

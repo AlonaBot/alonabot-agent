@@ -209,25 +209,13 @@
       }
     }
   },
-  "personas": {
-    "type": "list",
-    "description": "Personas",
-    "items": {
-      "name": {
-        "type": "string",
-        "description": "Name",
-        "required": true
-      },
-      "prompt": {
-        "type": "text",
-        "description": "System prompt"
-      }
-    }
-  },
   "default_persona": {
     "type": "string",
     "description": "Default persona",
-    "profile": true
+    "profile": true,
+    "options_from": {
+      "source": "@agent/personas"
+    }
   },
   "history_entries": {
     "type": "int",
@@ -321,7 +309,7 @@
   "skills_dir": {
     "type": "string",
     "description": "Skills directory",
-    "hint": "Empty disables skills. Relative paths use the plugin working directory. Restart the plugin after changing skills.",
+    "hint": "Empty disables skills. Relative paths use the plugin working directory. Use Reload skills after editing files.",
     "default": ""
   },
   "llm_service_allowed_plugins": {

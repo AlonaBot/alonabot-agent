@@ -97,10 +97,11 @@ data: [DONE]
 	t.Cleanup(model.Close)
 	configuration := agentConfig(model.URL, provider.OpenAICompatible)
 	configuration["skills_dir"] = directory
-	configuration["personas"] = []any{map[string]any{"name": "test", "prompt": "Persona prompt"}}
-	configuration["default_persona"] = "test"
 	// Adapter 未声明按钮能力，成功返回也证明加载技能无需额外确认。
-	h := startAgent(t, newLoop(false, 1024), configuration, nil)
+	h, admin := startModelAdmin(t, configuration)
+	admin.request(t, "POST", pageRoutePrefix+"personas", `{"name":"test","prompt":"Persona prompt"}`, 201)
+	profile := admin.createProfile(t, "Skills", map[string]any{"default_persona": "test"})
+	admin.assignProfile(t, "main", loopSession, profile)
 	if err := os.WriteFile(filepath.Join(directory, "b-alpha", "SKILL.md"), []byte("changed after startup"), 0o600); err != nil {
 		t.Fatal(err)
 	}

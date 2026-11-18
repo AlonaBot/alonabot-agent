@@ -109,13 +109,23 @@ func validHeaderName(name string) bool {
 type mcpPeer struct {
 	config     mcpServer
 	gate       chan struct{}
+	stopped    bool               // gate 保护；停止回收后永久禁止建立连接。
 	session    *mcp.ClientSession // gate 保护；会话可并发 CallTool。
+	sessionEnd *mcpSessionEnd     // gate 保护；每次连接使用独立的结束通知。
 	command    *exec.Cmd
 	stdin      io.WriteCloser // 停止预算到期时打断在途管道 I/O。
 	stdout     io.ReadCloser
 	exited     chan struct{} // 关闭发布 Wait 的结果，确保每个进程只 Wait 一次。
 	waitError  error
 	httpCancel context.CancelFunc
+	lastTools  []*mcp.Tool // gate 保护的最近成功目录。
+	lastError  error       // gate 保护；输出前由服务器 sanitize。
+}
+
+type mcpSessionEnd struct {
+	session *mcp.ClientSession
+	done    chan struct{}
+	err     error // done 关闭后读取，保留 Session.Wait 的完整错误。
 }
 
 func newMCPPeer(server mcpServer) *mcpPeer {
@@ -129,8 +139,17 @@ func (p *mcpPeer) tools(ctx context.Context) (*mcp.ClientSession, []*mcp.Tool, e
 		return nil, nil, ctx.Err()
 	}
 	defer func() { <-p.gate }()
+	return p.readTools(ctx)
+}
+
+// readTools 在 gate 内建立连接并更新目录状态。
+func (p *mcpPeer) readTools(ctx context.Context) (*mcp.ClientSession, []*mcp.Tool, error) {
+	if p.stopped {
+		return nil, nil, fmt.Errorf("MCP peer is stopped")
+	}
 	if p.session == nil {
 		if err := p.connect(ctx); err != nil {
+			p.lastError = err
 			return nil, nil, err
 		}
 	}
@@ -139,6 +158,7 @@ func (p *mcpPeer) tools(ctx context.Context) (*mcp.ClientSession, []*mcp.Tool, e
 	for {
 		page, err := p.session.ListTools(ctx, params)
 		if err != nil {
+			p.lastError = err
 			return nil, nil, err
 		}
 		tools = append(tools, page.Tools...)
@@ -147,6 +167,16 @@ func (p *mcpPeer) tools(ctx context.Context) (*mcp.ClientSession, []*mcp.Tool, e
 		}
 		params.Cursor = page.NextCursor
 	}
+	names := make(map[string]bool)
+	for _, tool := range tools {
+		if tool == nil || tool.Name == "" || names[tool.Name] {
+			p.lastError = fmt.Errorf("MCP tool names must be nonempty and unique")
+			return nil, nil, p.lastError
+		}
+		names[tool.Name] = true
+	}
+	p.lastTools = tools
+	p.lastError = nil
 	return p.session, tools, nil
 }
 
@@ -199,6 +229,12 @@ func (p *mcpPeer) connect(ctx context.Context) error {
 		return err
 	}
 	p.session = session
+	ended := &mcpSessionEnd{session: session, done: make(chan struct{})}
+	p.sessionEnd = ended
+	go func() {
+		ended.err = session.Wait()
+		close(ended.done) // 发布结果；旧会话只写自己的通知，不修改重连后的状态。
+	}()
 	return nil
 }
 
@@ -215,12 +251,18 @@ func (p *mcpPeer) killAndWait() error {
 func (p *mcpPeer) close(ctx context.Context) error {
 	p.gate <- struct{}{}
 	defer func() { <-p.gate }()
+	p.stopped = true
+	return p.closeLocked(ctx)
+}
+
+func (p *mcpPeer) closeLocked(ctx context.Context) error {
 	var errs []error
 	if p.httpCancel != nil {
 		// SDK Close 的 DELETE 使用会话 context；将剩余停止预算传到实际 HTTP 请求。
 		stop := context.AfterFunc(ctx, p.httpCancel)
 		defer stop()
 		defer p.httpCancel()
+		defer func() { p.httpCancel = nil }()
 	}
 	if p.session != nil {
 		closed := make(chan error, 1)
@@ -372,4 +414,23 @@ func (s mcpServer) sanitize(text string) string {
 		replacements = append(replacements, form, redacted)
 	}
 	return strings.NewReplacer(replacements...).Replace(text)
+}
+
+func (p *mcpPeer) reconnect(ctx context.Context) error {
+	select {
+	case p.gate <- struct{}{}:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	defer func() { <-p.gate }()
+	if p.stopped {
+		return fmt.Errorf("MCP peer is stopped")
+	}
+	closeError := p.closeLocked(ctx)
+	_, _, err := p.readTools(ctx)
+	err = errors.Join(closeError, err)
+	if err != nil {
+		p.lastError = err
+	}
+	return err
 }

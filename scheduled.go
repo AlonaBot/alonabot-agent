@@ -42,17 +42,20 @@ func (a *component) runScheduled(c *sdk.Context, session string, task AgentTask)
 		return err
 	}
 	var request provider.Request
-	if persona := a.config.persona(c.Config().String("default_persona")); persona != nil && persona.prompt != "" {
-		request.Messages = append(request.Messages, provider.Message{Role: roleSystem, Content: persona.prompt})
+	prompt, err := a.personaPrompt(c, c.Config().String("default_persona"))
+	if err != nil {
+		return err
 	}
-	if len(a.skills) > 0 {
-		request.Messages = append(request.Messages, provider.Message{Role: roleSystem, Content: a.skillPrompt(c.T("agent.skills.header"))})
+	request.Messages = append(request.Messages, provider.Message{Role: roleSystem, Content: prompt})
+	skills, _ := a.skillSnapshot()
+	if len(skills) > 0 {
+		request.Messages = append(request.Messages, provider.Message{Role: roleSystem, Content: skillPrompt(skills, c.T("agent.skills.header"))})
 	}
 	for _, entry := range history {
 		request.Messages = append(request.Messages, provider.Message{Role: entry.Role, Content: entry.Content})
 	}
 	request.Messages = append(request.Messages, provider.Message{Role: roleUser, Content: task.Prompt})
-	catalog, err := a.listTools(c)
+	catalog, err := a.listTools(c, skills)
 	if err != nil {
 		return err
 	}
@@ -79,8 +82,14 @@ func (a *component) runScheduled(c *sdk.Context, session string, task AgentTask)
 	if err != nil {
 		return err
 	}
-	_, err = conversation.Append(c, session, userJSON, assistantJSON)
-	return err
+	// 正文与目录登记共用会话锁，避免页面把尚未完成的登记当作空会话清走。
+	lock := a.sessionLock(session)
+	lock.Lock()
+	defer lock.Unlock()
+	if _, err := conversation.Append(c, session, userJSON, assistantJSON); err != nil {
+		return err
+	}
+	return db.WithContext(c).Save(&conversationRecord{Key: session}).Error
 }
 
 // splitTaskText 沿用 Context.Stream 的计量方式，按创建时快照在码点边界分段。

@@ -20,7 +20,7 @@ import (
 
 func memoryDatabase(t *testing.T, h *harness) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("sqlite", "file:"+filepath.Join(h.dir, "plugins", agentID, "dev.sqlite")+"?mode=rw")
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(h.dir, "plugins", agentID, "dev.sqlite")+"?mode=rw&_pragma=busy_timeout(5000)")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func checkMemoryContext(t *testing.T, request completionRequest, notes, profile,
 			systems = append(systems, message.Content)
 		}
 	}
-	want := []string{notes}
+	want := []string{"You are AlonaBot, a helpful assistant. Reply in the user's language and keep answers concise.", notes}
 	if profile != "" {
 		want = append(want, profile)
 	}

@@ -18,7 +18,49 @@
     "agent.profile_updated": "已更新配置文件：{name}（{sessions} 个会话）。",
     "agent.profile_reloading": "Agent 即将重载。",
     "agent.profile_current": "当前配置文件：{name}（{sessions} 个会话）。",
-    "agent.unknown_profile": "找不到配置文件：{name}。可用配置文件：{names}"
+    "agent.unknown_profile": "找不到配置文件：{name}。可用配置文件：{names}",
+    "pages.search": "搜索",
+    "pages.refresh": "刷新",
+    "pages.empty": "暂无记录",
+    "pages.loading": "加载中…",
+    "pages.new_persona": "新建人格",
+    "pages.edit": "编辑",
+    "pages.delete": "删除",
+    "pages.cancel": "取消",
+    "pages.save": "保存",
+    "pages.name": "名称",
+    "pages.prompt": "系统提示词",
+    "pages.references": "引用的配置文件",
+    "pages.sessions": "会话",
+    "pages.reconnect": "重新连接",
+    "pages.tools": "工具",
+    "pages.reload": "重新读取",
+    "pages.skill_hint": "修改 SKILL.md 后点击重新读取。已开始的对话轮次继续使用原技能快照。",
+    "pages.problems": "校验问题",
+    "pages.memory": "会话笔记",
+    "pages.user": "用户档案",
+    "pages.conversations": "会话记录",
+    "pages.view": "查看",
+    "pages.scope": "范围",
+    "pages.instance": "实例",
+    "pages.entries": "条目",
+    "pages.add_entry": "添加条目",
+    "pages.confirm_delete": "删除这条记录？",
+    "pages.task": "任务",
+    "pages.creator": "创建者",
+    "pages.target": "发送目标",
+    "pages.trigger": "触发规则",
+    "pages.next_at": "下次运行",
+    "pages.created_at": "创建时间",
+    "pages.close": "关闭",
+    "pages.disconnected": "未连接",
+    "pages.connected": "已连接",
+    "pages.error": "错误",
+    "pages.count": "共计",
+    "pages.images": "图片",
+    "pages.role": "角色",
+    "pages.kind": "类别",
+    "pages.speaker": "发言人"
   },
   "commands": {
     "ask": {
@@ -46,7 +88,7 @@
   "config": {
     "skills_dir": {
       "description": "技能目录",
-      "hint": "留空关闭技能。相对路径以插件工作目录为基准，修改技能后需重启插件。"
+      "hint": "留空关闭技能。相对路径以插件工作目录为基准；修改文件后可在技能页重新读取。"
     },
     "providers": {
       "description": "Provider",
@@ -152,17 +194,6 @@
               "description": "API 密钥"
             }
           }
-        }
-      }
-    },
-    "personas": {
-      "description": "人格",
-      "items": {
-        "name": {
-          "description": "名称"
-        },
-        "prompt": {
-          "description": "系统提示词"
         }
       }
     },
@@ -272,5 +303,12 @@
     "member_sessions": {
       "description": "群成员独立会话"
     }
+  },
+  "pages": {
+    "/pages/personas": "人格",
+    "/pages/mcp": "MCP",
+    "/pages/skills": "技能",
+    "/pages/data": "数据",
+    "/pages/tasks": "用户任务"
   }
 }

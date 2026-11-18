@@ -40,10 +40,10 @@ type memoryResponse struct{}
 
 // memoryRecord 在同一行保存完整有序条目，使换行文本与码点校验使用相同的数据。
 type memoryRecord struct {
-	Target   string   `gorm:"primaryKey;autoIncrement:false"`
-	Scope    string   `gorm:"primaryKey;autoIncrement:false"` // 会话键或 Actor 的外部用户 ID。
-	Instance string   `gorm:"primaryKey;autoIncrement:false"`
-	Entries  []string `gorm:"serializer:json;not null"`
+	Target   string   `gorm:"primaryKey;autoIncrement:false" json:"target"`
+	Scope    string   `gorm:"primaryKey;autoIncrement:false" json:"scope"` // 会话键或 Actor 的外部用户 ID。
+	Instance string   `gorm:"primaryKey;autoIncrement:false" json:"instance"`
+	Entries  []string `gorm:"serializer:json;not null" json:"entries"`
 }
 
 // TableName 固定 Agent 受管数据库中记忆的表名。
@@ -220,6 +220,9 @@ func (a *component) conversationMemory(c *sdk.Context, db *gorm.DB, key string) 
 			return nil, "", fmt.Errorf("encode memory snapshot: %w", err)
 		}
 		if _, err := conversation.Append(c, key, encoded); err != nil {
+			return nil, "", err
+		}
+		if err := db.WithContext(c).Save(&conversationRecord{Key: key}).Error; err != nil {
 			return nil, "", err
 		}
 	}

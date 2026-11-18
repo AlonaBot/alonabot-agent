@@ -32,23 +32,28 @@ type skill struct {
 	name, description, body string
 }
 
-func readSkills(directory string) []skill {
+type skillProblem struct {
+	Path    string `json:"path"`
+	Message string `json:"message"`
+}
+
+func readSkills(directory string) ([]skill, []skillProblem) {
+	skills, problems := []skill{}, []skillProblem{}
 	if directory == "" {
-		return nil
+		return skills, problems
 	}
 	// 1. 目录项按名字读取，只处理真实的一级子目录。
 	root, err := os.OpenRoot(directory)
 	if err != nil {
 		slog.Warn("skills directory unavailable", "path", directory, "error", err)
-		return nil
+		return skills, []skillProblem{{Path: directory, Message: err.Error()}}
 	}
 	defer root.Close()
 	entries, err := fs.ReadDir(root.FS(), ".")
 	if err != nil {
 		slog.Warn("skills directory unavailable", "path", directory, "error", err)
-		return nil
+		return skills, []skillProblem{{Path: directory, Message: err.Error()}}
 	}
-	var skills []skill
 	names := make(map[string]bool)
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -69,6 +74,7 @@ func readSkills(directory string) []skill {
 		}
 		if err != nil {
 			slog.Warn("invalid skill file", "path", path, "error", err)
+			problems = append(problems, skillProblem{Path: path, Message: err.Error()})
 			continue
 		}
 		names[loaded.name] = true
@@ -76,7 +82,7 @@ func readSkills(directory string) []skill {
 	}
 	// 2. 提示顺序只取决于技能名称，重复名称的优先级已由目录顺序确定。
 	sort.Slice(skills, func(i, j int) bool { return skills[i].name < skills[j].name })
-	return skills
+	return skills, problems
 }
 
 func readSkillDirectory(root *os.Root, name string, info os.FileInfo) (skill, bool, error) {
@@ -196,21 +202,21 @@ func resolveSkillAlias(node *yaml.Node) *yaml.Node {
 	return node
 }
 
-func (a *component) skillPrompt(header string) string {
+func skillPrompt(skills []skill, header string) string {
 	var prompt strings.Builder
 	prompt.WriteString(header)
-	for _, skill := range a.skills {
+	for _, skill := range skills {
 		prompt.WriteByte('\n')
 		prompt.WriteString(skill.name + ": " + skill.description)
 	}
 	return prompt.String()
 }
 
-func (a *component) addSkillTool(catalog *toolCatalog) {
-	if len(a.skills) == 0 {
+func addSkillTool(catalog *toolCatalog, skills []skill) {
+	if len(skills) == 0 {
 		return
 	}
-	tool := roundTool{local: a.loadSkill, definition: provider.Tool{
+	tool := roundTool{local: func(arguments json.RawMessage) string { return loadSkill(skills, arguments) }, definition: provider.Tool{
 		Name: loadSkillToolName, Description: "Load the full body of an available skill by name",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"}},"required":["name"],"additionalProperties":false}`),
 	}}
@@ -218,7 +224,7 @@ func (a *component) addSkillTool(catalog *toolCatalog) {
 	catalog.definitions = append(catalog.definitions, tool.definition)
 }
 
-func (a *component) loadSkill(arguments json.RawMessage) string {
+func loadSkill(skills []skill, arguments json.RawMessage) string {
 	var input struct {
 		Name *string `json:"name"`
 	}
@@ -228,10 +234,24 @@ func (a *component) loadSkill(arguments json.RawMessage) string {
 	if input.Name == nil {
 		return toolResult("", errcode.InvalidArgument.New("name must be a string"))
 	}
-	for _, skill := range a.skills {
+	for _, skill := range skills {
 		if skill.name == *input.Name {
 			return skill.body
 		}
 	}
 	return "error: NOT_FOUND: unknown skill"
+}
+
+// skillSnapshot 返回只读切片；重新读取只替换引用，已开始的轮次保留原目录。
+func (a *component) skillSnapshot() ([]skill, []skillProblem) {
+	a.skillsMu.RLock()
+	defer a.skillsMu.RUnlock()
+	return a.skills, a.skillProblems
+}
+
+func (a *component) reloadSkills() {
+	skills, problems := readSkills(a.config.skillsDir)
+	a.skillsMu.Lock()
+	a.skills, a.skillProblems = skills, problems
+	a.skillsMu.Unlock()
 }

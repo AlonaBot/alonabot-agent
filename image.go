@@ -177,5 +177,11 @@ func (a *component) appendImages(c *sdk.Context, db *gorm.DB, generation uint64,
 	if err != nil && appended {
 		c.Logger().WarnContext(c, "image persistence failed after conversation append", "session", session, "error", err)
 	}
+	if appended {
+		// 管理员可能在生成期间清空正文和目录；仍持有会话锁时恢复目录。
+		if directoryError := db.WithContext(c).Save(&conversationRecord{Key: session}).Error; directoryError != nil {
+			err = errors.Join(err, fmt.Errorf("register conversation: %w", directoryError))
+		}
+	}
 	return err
 }

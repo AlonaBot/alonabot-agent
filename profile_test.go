@@ -35,9 +35,9 @@ func TestAgentProfiles(t *testing.T) {
 	t.Cleanup(server.Close)
 	configuration := agentConfig(server.URL, provider.OpenAI)
 	configuration["models"] = append(configuration["models"].([]any), map[string]any{"name": "second", "provider": "test", "model": "second-model", "type": "chat"})
-	configuration["personas"] = []any{map[string]any{"name": "first", "prompt": "first system"}, map[string]any{"name": "second", "prompt": "second system"}}
-	configuration["default_persona"] = "first"
 	h, admin := startModelAdmin(t, configuration)
+	admin.request(t, "POST", pageRoutePrefix+"personas", `{"name":"first","prompt":"first system"}`, 201)
+	admin.request(t, "POST", pageRoutePrefix+"personas", `{"name":"second","prompt":"second system"}`, 201)
 	first := admin.createProfile(t, "First", map[string]any{"chat_model": "test", "default_persona": "first", "triggers": []string{"mention"}})
 	secondValues := map[string]any{"chat_model": "second", "default_persona": "second", "triggers": []string{"wake_word"}, "wake_words": []string{"Alona"}}
 	second := admin.createProfile(t, "Second", secondValues)

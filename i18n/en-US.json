@@ -18,12 +18,54 @@
     "agent.profile_updated": "Profile updated: {name} ({sessions} sessions).",
     "agent.profile_reloading": "The Agent will reload shortly.",
     "agent.profile_current": "Current profile: {name} ({sessions} sessions).",
-    "agent.unknown_profile": "Unknown profile: {name}. Available profiles: {names}"
+    "agent.unknown_profile": "Unknown profile: {name}. Available profiles: {names}",
+    "pages.search": "Search",
+    "pages.refresh": "Refresh",
+    "pages.empty": "No records",
+    "pages.loading": "Loading…",
+    "pages.new_persona": "New persona",
+    "pages.edit": "Edit",
+    "pages.delete": "Delete",
+    "pages.cancel": "Cancel",
+    "pages.save": "Save",
+    "pages.name": "Name",
+    "pages.prompt": "System prompt",
+    "pages.references": "Referenced profiles",
+    "pages.sessions": "sessions",
+    "pages.reconnect": "Reconnect",
+    "pages.tools": "Tools",
+    "pages.reload": "Reload skills",
+    "pages.skill_hint": "Reload after changing SKILL.md files. Active conversations keep their current skill snapshot.",
+    "pages.problems": "Validation problems",
+    "pages.memory": "Chat notes",
+    "pages.user": "User profiles",
+    "pages.conversations": "Conversations",
+    "pages.view": "View",
+    "pages.scope": "Scope",
+    "pages.instance": "Instance",
+    "pages.entries": "Entries",
+    "pages.add_entry": "Add entry",
+    "pages.confirm_delete": "Delete this record?",
+    "pages.task": "Task",
+    "pages.creator": "Creator",
+    "pages.target": "Target",
+    "pages.trigger": "Trigger",
+    "pages.next_at": "Next run",
+    "pages.created_at": "Created",
+    "pages.close": "Close",
+    "pages.disconnected": "Disconnected",
+    "pages.connected": "Connected",
+    "pages.error": "Error",
+    "pages.count": "Total",
+    "pages.images": "Images",
+    "pages.role": "Role",
+    "pages.kind": "Kind",
+    "pages.speaker": "Speaker"
   },
   "config": {
     "skills_dir": {
       "description": "Skills directory",
-      "hint": "Empty disables skills. Relative paths use the plugin working directory. Restart the plugin after changing skills."
+      "hint": "Empty disables skills. Relative paths use the plugin working directory. Use Reload skills after editing files."
     },
     "mcp_servers": {
       "description": "MCP servers",
@@ -147,5 +189,12 @@
     "member_sessions": {
       "description": "Separate group conversations by member"
     }
+  },
+  "pages": {
+    "/pages/personas": "Personas",
+    "/pages/mcp": "MCP",
+    "/pages/skills": "Skills",
+    "/pages/data": "Data",
+    "/pages/tasks": "User tasks"
   }
 }

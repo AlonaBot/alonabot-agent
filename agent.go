@@ -46,12 +46,9 @@ type configuredModel struct {
 	imageInput bool
 }
 
-type persona struct{ name, prompt string }
-
 type configuration struct {
 	providers                []configuredProvider
 	models                   []configuredModel
-	personas                 []persona
 	historyEntries           int
 	mcpServers               []mcpServer
 	skillsDir                string
@@ -62,10 +59,13 @@ type configuration struct {
 }
 
 type component struct {
-	config       configuration
-	sessionLocks [sessionLockCount]sync.Mutex
-	mcp          []*mcpPeer // 当前插件 Session 拥有，连接在首次对话时建立。
-	skills       []skill    // 启动时读取，整个插件 Session 内保持不变。
+	config        configuration
+	sessionLocks  [sessionLockCount]sync.Mutex
+	mcp           []*mcpPeer // 当前插件 Session 拥有，连接在首次对话时建立。
+	skills        []skill    // skillsMu 保护；轮次捕获后保持不变。
+	skillsMu      sync.RWMutex
+	skillProblems []skillProblem
+	basePersona   string
 }
 
 // New 创建官方 Agent，绑定生成资源并登记命令、迁移和生命周期回调。
@@ -74,7 +74,7 @@ func New() *sdk.Plugin {
 
 	a := &component{}
 	gormdb.Migrations(p, []gormdb.Migration{{ID: 1, Up: func(ctx context.Context, tx *gorm.DB) error {
-		return tx.WithContext(ctx).AutoMigrate(&chatSettings{}, &conversationImage{}, &modelUsage{})
+		return tx.WithContext(ctx).AutoMigrate(&chatSettings{}, &conversationImage{}, &modelUsage{}, &persona{}, &conversationRecord{})
 	}}, {ID: 2, Up: func(ctx context.Context, tx *gorm.DB) error {
 		return tx.WithContext(ctx).AutoMigrate(&memoryRecord{})
 	}}})
@@ -82,7 +82,13 @@ func New() *sdk.Plugin {
 		var err error
 		a.config, err = readConfiguration(p.Config())
 		if err == nil {
-			a.skills = readSkills(a.config.skillsDir)
+			a.basePersona = p.Config().String("default_persona")
+			if a.basePersona != "" {
+				if _, err := a.readPersona(ctx, a.basePersona); err != nil {
+					return fmt.Errorf("default_persona: %w", err)
+				}
+			}
+			a.skills, a.skillProblems = readSkills(a.config.skillsDir)
 			for _, server := range a.config.mcpServers {
 				a.mcp = append(a.mcp, newMCPPeer(server))
 			}
@@ -99,6 +105,8 @@ func New() *sdk.Plugin {
 	registerMemory(p)
 	service.Serve(p, llm.GenerateService).Access(service.AccessPublic).Handle(a.generate)
 	options.Serve(p, modelsServiceName, a.models)
+	options.Serve(p, "personas", a.personaOptions)
+	a.registerPages(p)
 	return p
 }
 
@@ -178,14 +186,7 @@ func readConfiguration(values config.Values) (configuration, error) {
 		}
 	}
 	result.imageCaptionPrompt = values.String("image_caption_prompt")
-	// 3. 校验默认人格的引用；没有人格时允许留空。
-	for _, item := range values.Objects("personas") {
-		result.personas = append(result.personas, persona{name: item.String("name"), prompt: item.String("prompt")})
-	}
-	if name := values.String("default_persona"); (name != "" || len(result.personas) > 0) && result.persona(name) == nil {
-		return configuration{}, fmt.Errorf("default_persona must name a configured persona")
-	}
-	// 4. MCP 仅校验当前传输使用的字段；凭证已经过 SDK secret 解析。
+	// 3. MCP 仅校验当前传输使用的字段；凭证已经过 SDK secret 解析。
 	servers, err := readMCPServers(values)
 	if err != nil {
 		return configuration{}, err
@@ -213,15 +214,6 @@ func (s *configuration) model(name string) *configuredModel {
 	for i := range s.models {
 		if s.models[i].name == name {
 			return &s.models[i]
-		}
-	}
-	return nil
-}
-
-func (s *configuration) persona(name string) *persona {
-	for i := range s.personas {
-		if s.personas[i].name == name {
-			return &s.personas[i]
 		}
 	}
 	return nil
