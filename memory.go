@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	memoryTool      = "alonabot_agent_official/memory"
+	memoryTool      = "alonabot-agent-official/memory"
 	memoryTarget    = "memory"
 	userTarget      = "user"
 	memoryLimit     = 2200 // 会话笔记的 Unicode 码点上限，包含条目间的换行。
