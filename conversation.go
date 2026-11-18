@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"iter"
+	"slices"
 	"strings"
 
 	"github.com/AlonaBot/AlonaBot/agent/provider"
@@ -81,27 +82,51 @@ func (a *component) converse(c *sdk.Context, text string) error {
 	if err != nil {
 		return err
 	}
-	text, currentImages := readImages(c, text)
-	request := provider.Request{MaxTokens: selected.maxTokens}
+	incoming := readImages(c)
+	var imagesToSave []provider.Image
+	plainText := text
+	for _, image := range incoming {
+		if len(image.Data) > 0 {
+			imagesToSave = append(imagesToSave, image)
+		} else {
+			plainText = prependImages(plainText, 1)
+		}
+	}
+	var prefix []provider.Message
 	if persona := a.config.persona(settings.Persona); persona != nil && persona.prompt != "" {
-		request.Messages = append(request.Messages, provider.Message{Role: roleSystem, Content: persona.prompt})
+		prefix = append(prefix, provider.Message{Role: roleSystem, Content: persona.prompt})
 	}
 	if len(a.skills) > 0 {
-		request.Messages = append(request.Messages, provider.Message{Role: roleSystem, Content: a.skillPrompt(c.T("agent.skills.header"))})
+		prefix = append(prefix, provider.Message{Role: roleSystem, Content: a.skillPrompt(c.T("agent.skills.header"))})
 	}
-	for _, entry := range history {
-		request.Messages = append(request.Messages, replayImages(entry, images, selected.imageInput))
+	captionModel := a.config.model(a.config.imageCaptionModel)
+	var captioned *string
+	var attemptUsedCaption bool
+	prepare := func(model *configuredModel, request provider.Request) provider.Request {
+		messages := slices.Clone(prefix)
+		for _, entry := range history {
+			messages = append(messages, replayImages(entry, images, model.imageInput))
+		}
+		if profile != "" {
+			messages = append(messages, provider.Message{Role: roleSystem, Content: profile})
+		}
+		current := provider.Message{Role: roleUser, Content: plainText}
+		attemptUsedCaption = !model.imageInput && captionModel != nil && len(imagesToSave) > 0
+		switch {
+		case model.imageInput:
+			current.Images = imagesToSave
+		case attemptUsedCaption:
+			// 转述每轮只发一次；带图片的回退模型仍读取原图。
+			if captioned == nil {
+				captioned = new(a.captionImages(c, db, captionModel, text, incoming))
+			}
+			current.Content = *captioned
+		default:
+			current.Content = prependImages(plainText, len(imagesToSave))
+		}
+		request.Messages = append(append(messages, current), request.Messages...)
+		return request
 	}
-	if profile != "" {
-		request.Messages = append(request.Messages, provider.Message{Role: roleSystem, Content: profile})
-	}
-	currentMessage := provider.Message{Role: roleUser, Content: text}
-	if selected.imageInput {
-		currentMessage.Images = currentImages
-	} else {
-		currentMessage.Content = prependImages(text, len(currentImages))
-	}
-	request.Messages = append(request.Messages, currentMessage)
 
 	catalog, err := a.listTools(c)
 	if err != nil {
@@ -112,27 +137,42 @@ func (a *component) converse(c *sdk.Context, text string) error {
 		return c.Reply(c.T("agent.tools_error", "code", errcode.Unavailable.String()))
 	}
 
-	// 2. Pull2 将 Provider 的推送回调转为 Stream 的拉取回调；stop 交还控制权并关闭响应体。
+	// 2. Pull 将 Provider 的推送回调转为 Stream 的拉取回调；stop 交还控制权并关闭响应体。
 	var assistant strings.Builder
 	var providerError error
-	next, stop := iter.Pull2(func(yield func(string, error) bool) {
-		providerError = runToolLoop(c.Context(), db, selected, request, catalog, func(text string) error {
+	var toolLimitReached bool
+	var usedCaption bool
+	retry := a.config.retryStream(c.Context(), c.Logger(), selected, prepare)
+	stream := func(request provider.Request, emit func(provider.Event) error) (string, provider.Result, error) {
+		model, result, err := retry(request, emit)
+		if err == nil && attemptUsedCaption {
+			usedCaption = true
+		}
+		return model, result, err
+	}
+	next, stop := iter.Pull(func(yield func(string) bool) {
+		providerError = runToolLoop(c.Context(), db, provider.Request{}, catalog, stream, func(text string) error {
 			assistant.WriteString(text)
-			if !yield(text, nil) {
+			if !yield(text) {
 				return context.Canceled
 			}
 			return nil
 		})
-		if providerError != nil && !errors.Is(providerError, errToolLimit) {
-			yield("", providerError)
-			return
+		if errors.Is(providerError, errToolLimit) {
+			// 工具预算耗尽仍正常收尾，以发送无编辑能力实例的缓冲文本。
+			toolLimitReached, providerError = true, nil
 		}
-		yield("", io.EOF)
 	})
 	defer stop()
 	_, err = c.Stream(func(context.Context) (string, error) {
-		text, err, _ := next()
-		return text, err
+		if text, ok := next(); ok {
+			return text, nil
+		}
+		if providerError != nil {
+			// Provider 错误链可能含 io.EOF；SDK 只用独立信号判断流是否结束。
+			return "", errcode.Unavailable.New("provider conversation failed")
+		}
+		return "", io.EOF
 	})
 	if err != nil {
 		if c.Context().Err() != nil {
@@ -147,13 +187,16 @@ func (a *component) converse(c *sdk.Context, text string) error {
 		c.Logger().ErrorContext(c.Context(), "provider conversation failed", "error", providerError)
 		return c.Reply(c.T("agent.error", "code", errcode.Unavailable.String()))
 	}
-
-	if errors.Is(providerError, errToolLimit) {
+	if toolLimitReached {
 		return c.Reply(c.T("agent.tool_limit"))
 	}
 
 	// 3. 生成和显示成功后，仅将仍属于当前 reset 代次的轮次原子追加。
-	user := conversationEntry{Role: roleUser, Content: text}
+	user := conversationEntry{Role: roleUser, Content: plainText}
+	if usedCaption {
+		user.Content = *captioned
+		imagesToSave = nil
+	}
 	if c.Event().ChatType == message.ChatGroup {
 		user.Speaker = c.Event().Actor.ExternalUserID
 	}
@@ -163,7 +206,7 @@ func (a *component) converse(c *sdk.Context, text string) error {
 	}
 	lock.Lock()
 	defer lock.Unlock()
-	return a.appendImages(c, db, settings.ResetGeneration, user, assistantJSON, currentImages)
+	return a.appendImages(c, db, settings.ResetGeneration, user, assistantJSON, imagesToSave)
 }
 
 // recentConversation 独立保留冻结快照，count 仅限制普通历史条数。

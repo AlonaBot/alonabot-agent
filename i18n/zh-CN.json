@@ -240,6 +240,20 @@
           "description": "图片输入"
         }
       }
+    },
+    "max_attempts": {
+      "description": "每个对话模型的最大尝试次数",
+      "hint": "含首次请求，至少为 1。"
+    },
+    "fallback_chat_models": {
+      "description": "回退对话模型"
+    },
+    "image_caption_model": {
+      "description": "图像转述模型",
+      "hint": "选择支持图片的对话模型，留空则保留图片占位。"
+    },
+    "image_caption_prompt": {
+      "description": "图像转述提示词"
     }
   }
 }

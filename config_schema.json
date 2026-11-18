@@ -391,5 +391,33 @@
         }
       }
     }
+  },
+  "max_attempts": {
+    "type": "int",
+    "description": "Maximum attempts per chat model",
+    "hint": "Includes the first request. Must be at least 1.",
+    "default": 3
+  },
+  "fallback_chat_models": {
+    "type": "list",
+    "description": "Fallback chat models",
+    "default": [],
+    "options_from": {
+      "source": "@agent/llm.models",
+      "filter": {"type": "chat"}
+    }
+  },
+  "image_caption_model": {
+    "type": "string",
+    "description": "Image caption model",
+    "hint": "Choose a chat model that accepts images, or leave empty to keep image placeholders.",
+    "options_from": {
+      "source": "@agent/llm.models",
+      "filter": {"type": "chat"}
+    }
+  },
+  "image_caption_prompt": {
+    "type": "text",
+    "description": "Image caption prompt"
   }
 }

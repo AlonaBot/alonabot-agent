@@ -16,26 +16,6 @@ func (c *Client) geminiURL() *url.URL {
 	return target
 }
 
-// geminiTransportError 隐去请求地址和凭证，同时保留原始错误链供调用方判断取消等原因。
-type geminiTransportError struct {
-	cause   error
-	message string
-}
-
-func (e *geminiTransportError) Error() string { return e.message }
-func (e *geminiTransportError) Unwrap() error { return e.cause }
-
-func (c *Client) geminiRequestError(err error) error {
-	cause := err
-	var urlError *url.Error
-	if errors.As(err, &urlError) {
-		err = urlError.Err // net/http 的包装会把完整 URL 写进 Error，说明取内部错误。
-	}
-	message := strings.ReplaceAll(err.Error(), c.geminiURL().String(), redactedAPIKey)
-	message = strings.ReplaceAll(message, c.config.APIKey, redactedAPIKey)
-	return &geminiTransportError{cause: cause, message: message}
-}
-
 func geminiBody(req Request) (map[string]any, error) {
 	// 1. 保持历史顺序，将工具结果关联到此前的调用。
 	contents := []map[string]any{}
@@ -65,7 +45,7 @@ func geminiBody(req Request) (map[string]any, error) {
 		}
 		for _, call := range message.ToolCalls {
 			part := map[string]any{"functionCall": map[string]any{"id": call.ID, "name": call.Name, "args": call.Arguments}}
-			if len(call.Replay) > 0 {
+			if call.replayProtocol == GeminiGenerateContent {
 				part["thoughtSignature"] = call.Replay
 			}
 			parts = append(parts, part)
@@ -170,6 +150,7 @@ func (c *Client) streamGemini(r io.Reader, emit func(Event) error) (Result, erro
 				}
 				if part.ThoughtSignature != "" {
 					call.Replay, _ = json.Marshal(part.ThoughtSignature) // 字符串编码不会失败。
+					call.replayProtocol = GeminiGenerateContent
 				}
 				if err := emit(Event{ToolCall: call}); err != nil {
 					return err

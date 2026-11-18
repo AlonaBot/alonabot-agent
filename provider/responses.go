@@ -55,7 +55,7 @@ func responsesParams(model string, req Request) (responses.ResponseNewParams, er
 			}})
 		}
 		for _, call := range message.ToolCalls {
-			if len(call.Replay) > 0 {
+			if call.replayProtocol == OpenAIResponses {
 				var items []json.RawMessage
 				if bytes.HasPrefix(bytes.TrimSpace(call.Replay), []byte("[")) {
 					if err := json.Unmarshal(call.Replay, &items); err != nil {
@@ -157,6 +157,7 @@ func (c *Client) streamResponses(ctx context.Context, req Request, emit func(Eve
 					if err != nil {
 						return Result{}, fmt.Errorf("encode Responses tool replay: %w", err)
 					}
+					call.replayProtocol = OpenAIResponses
 					reasoning = nil
 				}
 				if err := emit(Event{ToolCall: call}); err != nil {

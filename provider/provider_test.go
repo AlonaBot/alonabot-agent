@@ -140,9 +140,11 @@ func TestStream(t *testing.T) {
 			}
 			if tc.protocol == OpenAIResponses {
 				req.Messages[3].ToolCalls[0].Replay = json.RawMessage(`[{"type":"reasoning","encrypted_content":"history","summary":[]}]`)
+				req.Messages[3].ToolCalls[0].replayProtocol = tc.protocol
 			}
 			if tc.protocol == GeminiGenerateContent {
 				req.Messages[3].ToolCalls[0].Replay = json.RawMessage(`"history-signature"`)
+				req.Messages[3].ToolCalls[0].replayProtocol = tc.protocol
 			}
 			result, err := client.Stream(ctx, req, func(e Event) error {
 				if e.ToolCall != nil {

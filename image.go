@@ -83,7 +83,8 @@ func supportedImageMIME(mime string) bool {
 	}
 }
 
-func readImages(c *sdk.Context, text string) (string, []provider.Image) {
+// readImages 保留入站图片顺序；读失败的槽位只用于生成占位。
+func readImages(c *sdk.Context) []provider.Image {
 	var images []provider.Image
 	for _, segment := range c.Event().Payload.(*message.CreatedPayload).Chain {
 		image, ok := segment.(message.ImageSegment)
@@ -97,12 +98,10 @@ func readImages(c *sdk.Context, text string) (string, []provider.Image) {
 				reason = strings.ReplaceAll(reason, incoming.Token, "[REDACTED]")
 			}
 			c.Logger().WarnContext(c.Context(), "image read failed", "session", sessionKey(c), "error", reason)
-			text = prependImages(text, 1)
-			continue
 		}
 		images = append(images, loaded)
 	}
-	return text, images
+	return images
 }
 
 func storedImages(ctx context.Context, db *gorm.DB, session string, count uint64) (map[uint64]conversationImage, error) {

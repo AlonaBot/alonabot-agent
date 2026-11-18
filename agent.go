@@ -58,6 +58,10 @@ type configuration struct {
 	mcpServers               []mcpServer
 	skillsDir                string
 	llmServiceAllowedPlugins []string
+	maxAttempts              int64
+	fallbackChatModels       []string
+	imageCaptionModel        string
+	imageCaptionPrompt       string
 }
 
 type component struct {
@@ -160,6 +164,24 @@ func readConfiguration(values config.Values) (configuration, error) {
 			return configuration{}, fmt.Errorf("$.chat_model: must name a configured chat model")
 		}
 	}
+	result.maxAttempts = values.Int("max_attempts")
+	if result.maxAttempts < 1 {
+		return configuration{}, fmt.Errorf("$.max_attempts: must be at least 1")
+	}
+	result.fallbackChatModels = values.Strings("fallback_chat_models")
+	for i, name := range result.fallbackChatModels {
+		if selected := result.model(name); selected == nil || selected.modelType != modelChat {
+			return configuration{}, fmt.Errorf("$.fallback_chat_models[%d]: must name a configured chat model", i)
+		}
+	}
+	result.imageCaptionModel = values.String("image_caption_model")
+	if result.imageCaptionModel != "" {
+		selected := result.model(result.imageCaptionModel)
+		if selected == nil || selected.modelType != modelChat || !selected.imageInput {
+			return configuration{}, fmt.Errorf("$.image_caption_model: must name a configured chat model with image_input enabled")
+		}
+	}
+	result.imageCaptionPrompt = values.String("image_caption_prompt")
 	// 3. 校验默认人格的引用；没有人格时允许留空。
 	for _, item := range values.Objects("personas") {
 		result.personas = append(result.personas, persona{name: item.String("name"), prompt: item.String("prompt")})

@@ -19,7 +19,7 @@ var (
 	errModelUsage = errcode.Internal.New("could not record model usage")
 )
 
-func runToolLoop(ctx context.Context, db *gorm.DB, selected *configuredModel, request provider.Request, catalog toolCatalog, emit func(string) error) error {
+func runToolLoop(ctx context.Context, db *gorm.DB, request provider.Request, catalog toolCatalog, stream conversationStream, emit func(string) error) error {
 	request.Tools = catalog.definitions
 	steps := 0
 	for {
@@ -28,7 +28,7 @@ func runToolLoop(ctx context.Context, db *gorm.DB, selected *configuredModel, re
 		}
 		var text strings.Builder
 		var calls []provider.ToolCall
-		result, err := selected.client.Stream(ctx, request, func(event provider.Event) error {
+		model, result, err := stream(request, func(event provider.Event) error {
 			if event.Text != "" {
 				text.WriteString(event.Text)
 				if err := emit(event.Text); err != nil {
@@ -43,7 +43,7 @@ func runToolLoop(ctx context.Context, db *gorm.DB, selected *configuredModel, re
 		if err != nil {
 			return err
 		}
-		if err := recordUsage(ctx, db, selected.name, time.Now(), result.Usage); err != nil {
+		if err := recordUsage(ctx, db, model, time.Now(), result.Usage); err != nil {
 			return fmt.Errorf("%w: %w", errModelUsage, err)
 		}
 		if err := ctx.Err(); err != nil {
@@ -52,7 +52,7 @@ func runToolLoop(ctx context.Context, db *gorm.DB, selected *configuredModel, re
 		if len(calls) == 0 {
 			return nil
 		}
-		// 原样回放 ToolCall，包含模型名称与协议私有 Replay，只保留到本轮结束。
+		// 保留完整 ToolCall，由目标协议决定是否回传私有 Replay。
 		request.Messages = append(request.Messages, provider.Message{Role: roleAssistant, Content: text.String(), ToolCalls: calls})
 		results := make([]provider.ToolResult, 0, len(calls))
 		for _, call := range calls {
