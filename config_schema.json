@@ -419,5 +419,22 @@
   "image_caption_prompt": {
     "type": "text",
     "description": "Image caption prompt"
+  },
+  "triggers": {
+    "type": "list",
+    "description": "Free conversation triggers",
+    "options": ["mention", "wake_word", "private"],
+    "labels": ["Group mention or reply", "Wake word", "Private chat"],
+    "default": []
+  },
+  "wake_words": {
+    "type": "list",
+    "description": "Wake words",
+    "default": []
+  },
+  "member_sessions": {
+    "type": "bool",
+    "description": "Separate group conversations by member",
+    "default": false
   }
 }

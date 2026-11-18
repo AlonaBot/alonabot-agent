@@ -254,6 +254,20 @@
     },
     "image_caption_prompt": {
       "description": "图像转述提示词"
+    },
+    "triggers": {
+      "description": "自由对话触发方式",
+      "labels": [
+        "群聊提及或回复",
+        "唤醒词",
+        "私聊"
+      ]
+    },
+    "wake_words": {
+      "description": "唤醒词"
+    },
+    "member_sessions": {
+      "description": "群成员独立会话"
     }
   }
 }

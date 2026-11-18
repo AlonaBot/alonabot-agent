@@ -132,6 +132,20 @@
     },
     "image_caption_prompt": {
       "description": "Image caption prompt"
+    },
+    "triggers": {
+      "description": "Free conversation triggers",
+      "labels": [
+        "Group mention or reply",
+        "Wake word",
+        "Private chat"
+      ]
+    },
+    "wake_words": {
+      "description": "Wake words"
+    },
+    "member_sessions": {
+      "description": "Separate group conversations by member"
     }
   }
 }

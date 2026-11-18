@@ -151,10 +151,9 @@ func TestAgentImages(t *testing.T) {
 	}
 	configuration := agentConfig(server.URL, provider.OpenAI)
 	configuration["models"].([]any)[0].(map[string]any)["image_input"] = true
+	configuration["triggers"] = []string{"mention"}
 	h := startAgent(t, loop, configuration, nil)
 	db := imageDatabase(t, h)
-	h.deliver(t, "/agent on", "admin", "en-US", false)
-	h.waitText(t, "Free conversation is on.")
 	// 每轮等两库完成，再交付下一轮，验证批边界引起的请求前缀变化。
 	for i, wantCount := range []int{1, 2, 3, 4, 2} {
 		n := i + 1

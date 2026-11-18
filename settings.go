@@ -44,12 +44,16 @@ func (a *component) settings(ctx context.Context, session string, db *gorm.DB) (
 }
 
 func (a *component) updateSettings(c *sdk.Context, update func(*chatSettings)) error {
+	return a.updateSettingsFor(c, sessionKey(c), update)
+}
+
+func (a *component) updateSettingsFor(c *sdk.Context, session string, update func(*chatSettings)) error {
 	db, err := gormdb.Open(c.Context())
 	if err != nil {
 		return err
 	}
 	return db.WithContext(c.Context()).Transaction(func(tx *gorm.DB) error {
-		settings, err := a.settings(c.Context(), sessionKey(c), tx)
+		settings, err := a.settings(c.Context(), session, tx)
 		if err != nil {
 			return err
 		}
@@ -85,14 +89,14 @@ func (a *component) registerCommands(p *sdk.Plugin) {
 }
 
 func (a *component) resetConversation(c *sdk.Context) error {
-	lock := a.sessionLock(sessionKey(c))
+	session := conversationKey(c)
+	lock := a.sessionLock(session)
 	lock.Lock()
 	defer lock.Unlock()
 	// 与轮次最终的代次核对和追加共用锁，清空后旧轮次只能跳过追加。
-	if err := a.updateSettings(c, func(s *chatSettings) { s.ResetGeneration++ }); err != nil {
+	if err := a.updateSettingsFor(c, session, func(s *chatSettings) { s.ResetGeneration++ }); err != nil {
 		return err
 	}
-	session := sessionKey(c)
 	if err := conversationapi.Clear(c.Context(), session); err != nil {
 		return err
 	}

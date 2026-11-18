@@ -38,15 +38,7 @@ func (a *component) registerConversation(p *sdk.Plugin) {
 		c.StopPropagation()
 		return c.Continue(func(c *sdk.Context) error { return a.converse(c, chain.Text()) })
 	})
-	p.On("chat", sdk.MessageCreated).Rule(sdk.ToMe(), sdk.NotCommand()).Handle(func(c *sdk.Context) error {
-		db, err := gormdb.Open(c.Context())
-		if err != nil {
-			return err
-		}
-		settings, err := a.settings(c.Context(), sessionKey(c), db)
-		if err != nil || !settings.Enabled {
-			return err
-		}
+	p.On("chat", sdk.MessageCreated).Filter(sdk.MessageFilter{TriggersConfig: "triggers", WakeWordsConfig: "wake_words"}).Rule(sdk.NotCommand()).Handle(func(c *sdk.Context) error {
 		return c.Continue(func(c *sdk.Context) error { return a.converse(c, c.Text()) })
 	})
 }
@@ -57,7 +49,7 @@ func (a *component) converse(c *sdk.Context, text string) error {
 	if err != nil {
 		return memoryError(c, err)
 	}
-	session := sessionKey(c)
+	session := conversationKey(c)
 	lock := a.sessionLock(session)
 	// 等 reset 的代次递增和历史清空一起完成，再取得新轮次的代次。
 	lock.Lock()
@@ -66,7 +58,13 @@ func (a *component) converse(c *sdk.Context, text string) error {
 		lock.Unlock()
 		return err
 	}
-	selected := a.config.model(settings.Model)
+	// 模型和人格保持聊天范围，成员记录只提供 reset 代次和图片计数。
+	chat, err := a.settings(c.Context(), sessionKey(c), db)
+	if err != nil {
+		lock.Unlock()
+		return err
+	}
+	selected := a.config.model(chat.Model)
 	if selected == nil || selected.modelType != modelChat {
 		lock.Unlock()
 		return c.Reply(c.T("agent.no_model"))
@@ -93,7 +91,7 @@ func (a *component) converse(c *sdk.Context, text string) error {
 		}
 	}
 	var prefix []provider.Message
-	if persona := a.config.persona(settings.Persona); persona != nil && persona.prompt != "" {
+	if persona := a.config.persona(chat.Persona); persona != nil && persona.prompt != "" {
 		prefix = append(prefix, provider.Message{Role: roleSystem, Content: persona.prompt})
 	}
 	if len(a.skills) > 0 {
@@ -197,7 +195,7 @@ func (a *component) converse(c *sdk.Context, text string) error {
 		user.Content = *captioned
 		imagesToSave = nil
 	}
-	if c.Event().ChatType == message.ChatGroup {
+	if c.Event().ChatType == message.ChatGroup && c.Event().Actor != nil {
 		user.Speaker = c.Event().Actor.ExternalUserID
 	}
 	assistantJSON, err := json.Marshal(conversationEntry{Role: roleAssistant, Content: assistant.String()})
