@@ -1,5 +1,4 @@
 {
-  "$version": 1,
   "providers": {
     "type": "template_list",
     "description": "Providers",
