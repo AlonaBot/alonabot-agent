@@ -1,6 +1,6 @@
-// Package agent 提供官方 Agent 组件，通过 SDK 管理聊天设置、会话历史、图片和流式回复。
+// Package agent 提供官方 Agent 组件，通过 SDK 使用配置文件、管理会话历史、图片和流式回复。
 //
-// [New] 构造独立的组件对象；Provider 客户端位于 provider 子包。受管 SQLite 保存聊天设置、
+// [New] 构造独立的组件对象；Provider 客户端位于 provider 子包。受管 SQLite 保存会话运行状态、
 // 图片、记忆和模型用量，会话条目交由 Core 保存。模型与会话契约见 CONTRACTS §13。
 package agent
 
@@ -52,15 +52,12 @@ type configuration struct {
 	providers                []configuredProvider
 	models                   []configuredModel
 	personas                 []persona
-	chatModel                string
-	defaultPersona           string
 	historyEntries           int
 	mcpServers               []mcpServer
 	skillsDir                string
 	llmServiceAllowedPlugins []string
 	maxAttempts              int64
 	fallbackChatModels       []string
-	imageCaptionModel        string
 	imageCaptionPrompt       string
 }
 
@@ -107,7 +104,7 @@ func New() *sdk.Plugin {
 
 func readConfiguration(values config.Values) (configuration, error) {
 	// 1. 提供商只保存连接与密钥，模型引用同一份配置。
-	result := configuration{chatModel: values.String("chat_model"), defaultPersona: values.String("default_persona"), historyEntries: int(values.Int("history_entries"))}
+	result := configuration{historyEntries: int(values.Int("history_entries"))}
 	result.llmServiceAllowedPlugins = values.Strings("llm_service_allowed_plugins")
 	result.skillsDir = values.String("skills_dir")
 	names := make(map[string]bool)
@@ -158,8 +155,8 @@ func readConfiguration(values config.Values) (configuration, error) {
 		selected.client = client
 		result.models = append(result.models, selected)
 	}
-	if result.chatModel != "" {
-		selected := result.model(result.chatModel)
+	if name := values.String("chat_model"); name != "" {
+		selected := result.model(name)
 		if selected == nil || selected.modelType != modelChat {
 			return configuration{}, fmt.Errorf("$.chat_model: must name a configured chat model")
 		}
@@ -174,9 +171,8 @@ func readConfiguration(values config.Values) (configuration, error) {
 			return configuration{}, fmt.Errorf("$.fallback_chat_models[%d]: must name a configured chat model", i)
 		}
 	}
-	result.imageCaptionModel = values.String("image_caption_model")
-	if result.imageCaptionModel != "" {
-		selected := result.model(result.imageCaptionModel)
+	if name := values.String("image_caption_model"); name != "" {
+		selected := result.model(name)
 		if selected == nil || selected.modelType != modelChat || !selected.imageInput {
 			return configuration{}, fmt.Errorf("$.image_caption_model: must name a configured chat model with image_input enabled")
 		}
@@ -186,7 +182,7 @@ func readConfiguration(values config.Values) (configuration, error) {
 	for _, item := range values.Objects("personas") {
 		result.personas = append(result.personas, persona{name: item.String("name"), prompt: item.String("prompt")})
 	}
-	if (result.defaultPersona != "" || len(result.personas) > 0) && result.persona(result.defaultPersona) == nil {
+	if name := values.String("default_persona"); (name != "" || len(result.personas) > 0) && result.persona(name) == nil {
 		return configuration{}, fmt.Errorf("default_persona must name a configured persona")
 	}
 	// 4. MCP 仅校验当前传输使用的字段；凭证已经过 SDK secret 解析。

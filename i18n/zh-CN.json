@@ -7,37 +7,40 @@
     "agent.skills.header": "可用技能（使用 load_skill 读取技能）：",
     "agent.memory_error": "记忆读取失败（{code}）。",
     "agent.error": "Provider 请求失败（{code}）。",
-    "agent.enabled": "已开启自由对话。",
-    "agent.disabled": "已关闭自由对话。",
     "agent.personas": "人格：{names}",
-    "agent.persona_selected": "已选择人格：{name}",
     "agent.unknown_persona": "找不到人格：{name}",
     "agent.reset": "已清除会话历史。",
     "agent.tool_limit": "已达到本轮工具调用上限，本轮对话已结束。",
     "agent.tools_error": "工具目录请求失败（{code}）。",
     "agent.no_model": "请管理员配置并选择对话模型。",
     "agent.models": "模型：{names}",
-    "agent.model_selected": "已选择模型：{name}",
-    "agent.unknown_model": "找不到对话模型：{name}"
+    "agent.unknown_model": "找不到对话模型：{name}",
+    "agent.profile_updated": "已更新配置文件：{name}（{sessions} 个会话）。",
+    "agent.profile_reloading": "Agent 即将重载。",
+    "agent.profile_current": "当前配置文件：{name}（{sessions} 个会话）。",
+    "agent.unknown_profile": "找不到配置文件：{name}。可用配置文件：{names}"
   },
   "commands": {
     "ask": {
       "description": "向 Agent 提问"
     },
     "agent on": {
-      "description": "开启本聊天的自由对话"
+      "description": "开启当前配置文件的自由对话"
     },
     "agent off": {
-      "description": "关闭本聊天的自由对话"
+      "description": "关闭当前配置文件的自由对话"
     },
     "persona": {
-      "description": "列出或选择人格"
+      "description": "列出人格或为当前配置文件选择人格"
     },
     "provider": {
-      "description": "列出或选择对话模型"
+      "description": "列出模型或为当前配置文件选择对话模型"
     },
     "reset": {
       "description": "清除本聊天的会话历史"
+    },
+    "profile": {
+      "description": "查看或切换配置文件"
     }
   },
   "config": {

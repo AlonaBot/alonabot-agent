@@ -36,7 +36,7 @@ func (a *component) generate(c *sdk.Context, req llm.Request) (llm.Response, err
 	}
 	name := req.Model
 	if name == "" {
-		name = a.config.chatModel
+		name = c.Config().String("chat_model")
 		if name == "" {
 			return llm.Response{}, errcode.FailedPrecondition.New("no chat model is configured")
 		}

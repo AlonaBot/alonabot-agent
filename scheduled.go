@@ -28,16 +28,12 @@ func (a *component) scheduled(c *sdk.Context, task AgentTask) error {
 }
 
 func (a *component) runScheduled(c *sdk.Context, session string, task AgentTask) error {
-	// 1. 读取目标聊天的模型设置，历史仅使用独立的任务会话；不读取记忆服务。
+	// 1. 使用调度调用的配置视图，历史仅使用独立的任务会话；不读取记忆服务。
 	db, err := gormdb.Open(c.Context())
 	if err != nil {
 		return err
 	}
-	settings, err := a.settings(c.Context(), string(task.Target.session())+"@"+task.Target.Instance, db)
-	if err != nil {
-		return err
-	}
-	selected := a.config.model(settings.Model)
+	selected := a.config.model(c.Config().String("chat_model"))
 	if selected == nil || selected.modelType != modelChat {
 		return fmt.Errorf("scheduled task has no configured chat model")
 	}
@@ -46,7 +42,7 @@ func (a *component) runScheduled(c *sdk.Context, session string, task AgentTask)
 		return err
 	}
 	var request provider.Request
-	if persona := a.config.persona(settings.Persona); persona != nil && persona.prompt != "" {
+	if persona := a.config.persona(c.Config().String("default_persona")); persona != nil && persona.prompt != "" {
 		request.Messages = append(request.Messages, provider.Message{Role: roleSystem, Content: persona.prompt})
 	}
 	if len(a.skills) > 0 {

@@ -58,13 +58,7 @@ func (a *component) converse(c *sdk.Context, text string) error {
 		lock.Unlock()
 		return err
 	}
-	// 模型和人格保持聊天范围，成员记录只提供 reset 代次和图片计数。
-	chat, err := a.settings(c.Context(), sessionKey(c), db)
-	if err != nil {
-		lock.Unlock()
-		return err
-	}
-	selected := a.config.model(chat.Model)
+	selected := a.config.model(c.Config().String("chat_model"))
 	if selected == nil || selected.modelType != modelChat {
 		lock.Unlock()
 		return c.Reply(c.T("agent.no_model"))
@@ -91,13 +85,17 @@ func (a *component) converse(c *sdk.Context, text string) error {
 		}
 	}
 	var prefix []provider.Message
-	if persona := a.config.persona(chat.Persona); persona != nil && persona.prompt != "" {
+	if persona := a.config.persona(c.Config().String("default_persona")); persona != nil && persona.prompt != "" {
 		prefix = append(prefix, provider.Message{Role: roleSystem, Content: persona.prompt})
 	}
 	if len(a.skills) > 0 {
 		prefix = append(prefix, provider.Message{Role: roleSystem, Content: a.skillPrompt(c.T("agent.skills.header"))})
 	}
-	captionModel := a.config.model(a.config.imageCaptionModel)
+	captionName := c.Config().String("image_caption_model")
+	captionModel := a.config.model(captionName)
+	if captionName != "" && (captionModel == nil || captionModel.modelType != modelChat || !captionModel.imageInput) {
+		return fmt.Errorf("$.image_caption_model: must name a configured chat model with image_input enabled")
+	}
 	var captioned *string
 	var attemptUsedCaption bool
 	prepare := func(model *configuredModel, request provider.Request) provider.Request {

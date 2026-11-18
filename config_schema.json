@@ -226,7 +226,8 @@
   },
   "default_persona": {
     "type": "string",
-    "description": "Default persona"
+    "description": "Default persona",
+    "profile": true
   },
   "history_entries": {
     "type": "int",
@@ -338,7 +339,8 @@
       "filter": {
         "type": "chat"
       }
-    }
+    },
+    "profile": true
   },
   "models": {
     "type": "list",
@@ -403,7 +405,9 @@
     "default": [],
     "options_from": {
       "source": "@agent/llm.models",
-      "filter": {"type": "chat"}
+      "filter": {
+        "type": "chat"
+      }
     }
   },
   "image_caption_model": {
@@ -412,8 +416,11 @@
     "hint": "Choose a chat model that accepts images, or leave empty to keep image placeholders.",
     "options_from": {
       "source": "@agent/llm.models",
-      "filter": {"type": "chat"}
-    }
+      "filter": {
+        "type": "chat"
+      }
+    },
+    "profile": true
   },
   "image_caption_prompt": {
     "type": "text",
@@ -422,18 +429,29 @@
   "triggers": {
     "type": "list",
     "description": "Free conversation triggers",
-    "options": ["mention", "wake_word", "private"],
-    "labels": ["Group mention or reply", "Wake word", "Private chat"],
-    "default": []
+    "options": [
+      "mention",
+      "wake_word",
+      "private"
+    ],
+    "labels": [
+      "Group mention or reply",
+      "Wake word",
+      "Private chat"
+    ],
+    "default": [],
+    "profile": true
   },
   "wake_words": {
     "type": "list",
     "description": "Wake words",
-    "default": []
+    "default": [],
+    "profile": true
   },
   "member_sessions": {
     "type": "bool",
     "description": "Separate group conversations by member",
-    "default": false
+    "default": false,
+    "profile": true
   }
 }
