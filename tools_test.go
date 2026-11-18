@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -118,6 +119,116 @@ func checkToolResult(t *testing.T, request completionRequest, id, expected strin
 
 // TestAgentTools 经真实 Core、SDK Session、SQLite 与两个 MCP 传输验证 V-58。
 func TestAgentTools(t *testing.T) {
+	t.Run("effects", func(t *testing.T) {
+		cases := []struct {
+			name, effect string
+			annotations  *mcp.ToolAnnotations
+		}{
+			{"read", "read_only", &mcp.ToolAnnotations{ReadOnlyHint: true}},
+			{"write", "write", &mcp.ToolAnnotations{DestructiveHint: new(false)}},
+			{"remove", "destructive", &mcp.ToolAnnotations{DestructiveHint: new(true)}},
+		}
+		server := mcp.NewServer(&mcp.Implementation{Name: "effects", Version: "1.0.0"}, nil)
+		var calls, requests atomic.Int32
+		for _, entry := range cases {
+			mcp.AddTool(server, &mcp.Tool{Name: entry.name, Description: entry.name, Annotations: entry.annotations}, func(_ context.Context, _ *mcp.CallToolRequest, in toolInput) (*mcp.CallToolResult, any, error) {
+				calls.Add(1)
+				return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: in.Text}}}, nil, nil
+			})
+		}
+		endpoint := httptest.NewServer(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil))
+		t.Cleanup(endpoint.Close)
+		model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var request completionRequest
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Error(err)
+				w.WriteHeader(400)
+				return
+			}
+			step := int(requests.Add(1)) - 1
+			w.Header().Set("Content-Type", "text/event-stream")
+			if step > 0 {
+				checkToolResult(t, request, cases[step-1].name, "actual parameters")
+			}
+			if step == len(cases) {
+				writeDelta(w, provider.OpenAICompatible, "effects finished")
+				writeEnd(w, provider.OpenAICompatible)
+				return
+			}
+			for _, tool := range request.Tools {
+				if tool.Function.Description == cases[step].name {
+					writeToolCall(w, cases[step].name, tool.Function.Name, toolInput{Text: "actual parameters"})
+					return
+				}
+			}
+			t.Errorf("missing MCP tool %s", cases[step].name)
+			w.WriteHeader(400)
+		}))
+		t.Cleanup(model.Close)
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		address := listener.Addr().String()
+		if err := listener.Close(); err != nil {
+			t.Fatal(err)
+		}
+		configuration := agentConfig(model.URL, provider.OpenAICompatible)
+		configuration["mcp_servers"] = []any{map[string]any{"name": "effects", "transport": "streamable-http", "url": endpoint.URL}}
+		loop := newLoop(false, 1024)
+		loop.buttons = true
+		h := startAgent(t, loop, configuration, map[string]any{"listen": address})
+		token, err := os.ReadFile(filepath.Join(h.dir, "admin_token"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		h.deliver(t, "/ask effects", "member", "en-US", false)
+		next := 0
+		for _, entry := range cases {
+			confirmation := h.confirmation(t, next)
+			if !strings.Contains(confirmation.text, "mcp/effects/"+entry.name) {
+				t.Fatalf("confirmation = %s", confirmation.text)
+			}
+			request, err := http.NewRequestWithContext(h.ctx, http.MethodGet, "http://"+address+"/api/v1/tools/policies", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request.Header.Set("Authorization", "Bearer "+strings.TrimSpace(string(token)))
+			response, err := http.DefaultClient.Do(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var directory struct {
+				Policies []struct {
+					PluginID                 string `json:"plugin_id"`
+					Service, Effect, Default string
+				}
+			}
+			decodeError := json.NewDecoder(response.Body).Decode(&directory)
+			closeError := response.Body.Close()
+			if response.StatusCode != http.StatusOK || decodeError != nil || closeError != nil {
+				t.Fatalf("policies: status=%d decode=%v close=%v", response.StatusCode, decodeError, closeError)
+			}
+			found := false
+			for _, policy := range directory.Policies {
+				if policy.PluginID == agentID && policy.Service == "mcp/effects/"+entry.name {
+					found = true
+					if policy.Effect != entry.effect || policy.Default != "confirm" {
+						t.Errorf("policy = %+v, want %s/confirm", policy, entry.effect)
+					}
+				}
+			}
+			if !found {
+				t.Fatalf("missing recorded operation %s", entry.name)
+			}
+			next = len(loop.snapshot())
+			h.click(t, confirmation, true, "member")
+		}
+		h.waitText(t, "effects finished")
+		if calls.Load() != 3 || requests.Load() != 4 {
+			t.Fatalf("calls=%d provider=%d", calls.Load(), requests.Load())
+		}
+	})
 	binary := buildMCP(t)
 	for _, scenario := range []struct {
 		name, transport string

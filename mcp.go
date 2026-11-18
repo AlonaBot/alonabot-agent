@@ -17,6 +17,7 @@ import (
 	"sync"
 
 	"github.com/AlonaBot/AlonaBot/sdk/config"
+	toolapi "github.com/AlonaBot/AlonaBot/sdk/tool"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -27,6 +28,20 @@ const (
 )
 
 type secretPair struct{ Name, Value string }
+
+func mcpEffect(annotations *mcp.ToolAnnotations) toolapi.Effect {
+	if annotations == nil {
+		return toolapi.Unspecified
+	}
+	if annotations.ReadOnlyHint {
+		return toolapi.ReadOnly
+	}
+	// MCP 规定 destructiveHint 缺省为 true。
+	if annotations.DestructiveHint != nil && !*annotations.DestructiveHint {
+		return toolapi.Write
+	}
+	return toolapi.Destructive
+}
 
 type mcpServer struct {
 	Name, Transport, Command, URL string

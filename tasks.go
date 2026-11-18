@@ -119,7 +119,7 @@ func scheduleTask(c *sdk.Context, arguments json.RawMessage) string {
 			trigger += "\ntimezone: " + input.Timezone
 		}
 	}
-	if err := toolapi.Confirm(c.Context(), "agent/schedule_task", taskSummary(input.Prompt, trigger)); err != nil {
+	if err := toolapi.Confirm(c.Context(), "agent/schedule_task", taskSummary(input.Prompt, trigger), toolapi.Unspecified); err != nil {
 		return toolResult("", err)
 	}
 	args := AgentTask{Creator: taskCreator{Instance: c.Instance(), User: c.User()}, Target: currentTaskTarget(c), Prompt: input.Prompt, CreatedAt: time.Now().UTC().Format(time.RFC3339Nano)}
@@ -205,7 +205,7 @@ func cancelTask(c *sdk.Context, arguments json.RawMessage) string {
 	if input.ID == "" {
 		return toolResult("", errcode.InvalidArgument.New("id is required"))
 	}
-	if err := toolapi.Confirm(c.Context(), "agent/cancel_task", string(arguments)); err != nil {
+	if err := toolapi.Confirm(c.Context(), "agent/cancel_task", string(arguments), toolapi.Unspecified); err != nil {
 		return toolResult("", err)
 	}
 	instances, err := agentTask.List(c.Context())

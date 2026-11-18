@@ -29,6 +29,7 @@ type roundTool struct {
 	peer       *mcpPeer
 	session    *mcp.ClientSession // 本轮目录捕获的来源，不随下一轮重建映射。
 	mcpName    string
+	effect     toolapi.Effect
 	local      func(json.RawMessage) string // 插件内工具直接执行，无 Core 策略与确认。
 	blocked    bool                         // 后台任务没有 Actor，拒绝所有需要交互确认的工具。
 }
@@ -67,7 +68,7 @@ func (a *component) listTools(c *sdk.Context) (toolCatalog, error) {
 					err = fmt.Errorf("MCP tool input schema must be an object")
 					break
 				}
-				additions = append(additions, roundTool{original: "mcp/" + peer.config.Name + "/" + tool.Name, blocked: c.User() == "", peer: peer, session: session, mcpName: tool.Name, definition: provider.Tool{Description: tool.Description, InputSchema: schema}})
+				additions = append(additions, roundTool{original: "mcp/" + peer.config.Name + "/" + tool.Name, blocked: c.User() == "", peer: peer, session: session, mcpName: tool.Name, effect: mcpEffect(tool.Annotations), definition: provider.Tool{Description: tool.Description, InputSchema: schema}})
 			}
 		}
 		if err != nil {
@@ -137,7 +138,7 @@ func (t roundTool) invoke(ctx context.Context, arguments json.RawMessage) string
 		return toolResult(string(result), err)
 	}
 	// 参数原文完整展示，确认成功后再发出唯一一次 tools/call。
-	if err := toolapi.Confirm(ctx, t.original, string(arguments)); err != nil {
+	if err := toolapi.Confirm(ctx, t.original, string(arguments), t.effect); err != nil {
 		return toolResult("", err)
 	}
 	if err := ctx.Err(); err != nil {
