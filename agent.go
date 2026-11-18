@@ -1,7 +1,7 @@
 // Package agent 提供官方 Agent 组件，通过 SDK 管理聊天设置、会话历史、图片和流式回复。
 //
-// [New] 构造独立的组件对象；Provider 客户端位于 provider 子包，聊天设置与图片保存在
-// 受管 SQLite，会话条目交由 Core 保存。生命周期与会话契约见 CONTRACTS §13。
+// [New] 构造独立的组件对象；Provider 客户端位于 provider 子包。受管 SQLite 保存聊天设置、
+// 图片、记忆和模型用量，会话条目交由 Core 保存。模型与会话契约见 CONTRACTS §13。
 package agent
 
 import (
@@ -27,7 +27,14 @@ type configuredProvider struct {
 	connection provider.Config
 }
 
-const modelChat = "chat"
+const (
+	modelChat         = "chat"
+	modelSpeechToText = "speech_to_text"
+	modelTextToSpeech = "text_to_speech"
+	modelEmbedding    = "embedding"
+	modelRerank       = "rerank"
+	modelDecision     = "decision"
+)
 
 type configuredModel struct {
 	name       string
@@ -66,7 +73,7 @@ func New() *sdk.Plugin {
 
 	a := &component{}
 	gormdb.Migrations(p, []gormdb.Migration{{ID: 1, Up: func(ctx context.Context, tx *gorm.DB) error {
-		return tx.WithContext(ctx).AutoMigrate(&chatSettings{}, &conversationImage{})
+		return tx.WithContext(ctx).AutoMigrate(&chatSettings{}, &conversationImage{}, &modelUsage{})
 	}}, {ID: 2, Up: func(ctx context.Context, tx *gorm.DB) error {
 		return tx.WithContext(ctx).AutoMigrate(&memoryRecord{})
 	}}})
@@ -84,6 +91,9 @@ func New() *sdk.Plugin {
 	p.OnStop(a.closeMCP)
 	a.registerCommands(p)
 	a.registerConversation(p)
+	p.Route(http.MethodPost, "/models/discover").HandleFunc(a.discoverModels)
+	p.Route(http.MethodPost, "/models/test").HandleFunc(a.testModel)
+	p.Route(http.MethodGet, "/models/usage").HandleFunc(a.modelsUsage)
 	task.On(p, agentTask).Handle(a.scheduled)
 	registerMemory(p)
 	service.Serve(p, llm.GenerateService).Access(service.AccessPublic).Handle(a.generate)
@@ -105,8 +115,7 @@ func readConfiguration(values config.Values) (configuration, error) {
 		}
 		names[name] = true
 		connection := provider.Config{Protocol: provider.Protocol(item.String("protocol")), BaseURL: item.String("base_url"), APIKey: item.String("api_key")}
-		baseURL, err := url.Parse(connection.BaseURL)
-		if err != nil || baseURL.Host == "" || (baseURL.Scheme != "http" && baseURL.Scheme != "https") || baseURL.User != nil || baseURL.RawQuery != "" || baseURL.Fragment != "" {
+		if !validProviderBaseURL(connection.BaseURL) {
 			return configuration{}, fmt.Errorf("%s.base_url: must be HTTP(S) without credentials, query, or fragment", path)
 		}
 		if connection.APIKey == "" && connection.Protocol != provider.OllamaChat {
@@ -114,7 +123,7 @@ func readConfiguration(values config.Values) (configuration, error) {
 		}
 		result.providers = append(result.providers, configuredProvider{name: name, connection: connection})
 	}
-	// 2. 模型名称独立去重，先验证引用与类型，再为 chat 构造客户端。
+	// 2. 模型名称独立去重；校验类型后复制连接，加入该条目的远端模型 ID。
 	clear(names)
 	for i, item := range values.Objects("models") {
 		path := fmt.Sprintf("$.models[%d]", i)
@@ -134,15 +143,15 @@ func readConfiguration(values config.Values) (configuration, error) {
 			if selected.maxTokens < 1 {
 				return configuration{}, fmt.Errorf("%s.max_tokens: must be at least 1", path)
 			}
-			connection.Model = selected.model
-			client, err := provider.New(connection, &http.Client{})
-			if err != nil {
-				return configuration{}, fmt.Errorf("%s: configure model: %w", path, err)
-			}
-			selected.client = client
 		} else if connection.Protocol != provider.OpenAI && connection.Protocol != provider.OpenAICompatible {
 			return configuration{}, fmt.Errorf("%s.type: model type requires openai or openai-compatible protocol", path)
 		}
+		connection.Model = selected.model
+		client, err := provider.New(connection, &http.Client{})
+		if err != nil {
+			return configuration{}, fmt.Errorf("%s: configure model: %w", path, err)
+		}
+		selected.client = client
 		result.models = append(result.models, selected)
 	}
 	if result.chatModel != "" {
@@ -165,6 +174,12 @@ func readConfiguration(values config.Values) (configuration, error) {
 	}
 	result.mcpServers = servers
 	return result, nil
+}
+
+func validProviderBaseURL(raw string) bool {
+	address, err := url.Parse(raw)
+	return err == nil && address.Host != "" && (address.Scheme == "http" || address.Scheme == "https") &&
+		address.User == nil && address.RawQuery == "" && address.Fragment == ""
 }
 
 func (s *configuration) provider(name string) *configuredProvider {

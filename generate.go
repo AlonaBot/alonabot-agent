@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"slices"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/AlonaBot/AlonaBot/agent/provider"
 	"github.com/AlonaBot/AlonaBot/sdk"
 	"github.com/AlonaBot/AlonaBot/sdk/errcode"
+	"github.com/AlonaBot/AlonaBot/sdk/gormdb"
 	"github.com/AlonaBot/AlonaBot/sdk/llm"
 )
 
@@ -74,6 +76,13 @@ func (a *component) generate(c *sdk.Context, req llm.Request) (llm.Response, err
 	// 3. nil 用量保持缺失，有用量时通过指针保留零值。
 	response := llm.Response{Text: text.String(), Model: selected.name}
 	if result.Usage != nil {
+		db, err := gormdb.Open(c.Context())
+		if err != nil {
+			return llm.Response{}, fmt.Errorf("%w: %w", errModelUsage, err)
+		}
+		if err := recordUsage(c.Context(), db, selected.name, time.Now(), result.Usage); err != nil {
+			return llm.Response{}, fmt.Errorf("%w: %w", errModelUsage, err)
+		}
 		response.InputTokens = &result.Usage.InputTokens
 		response.OutputTokens = &result.Usage.OutputTokens
 	}

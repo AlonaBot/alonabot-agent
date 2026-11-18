@@ -116,7 +116,7 @@ func (a *component) converse(c *sdk.Context, text string) error {
 	var assistant strings.Builder
 	var providerError error
 	next, stop := iter.Pull2(func(yield func(string, error) bool) {
-		providerError = runToolLoop(c.Context(), selected, request, catalog, func(text string) error {
+		providerError = runToolLoop(c.Context(), db, selected, request, catalog, func(text string) error {
 			assistant.WriteString(text)
 			if !yield(text, nil) {
 				return context.Canceled
@@ -140,6 +140,9 @@ func (a *component) converse(c *sdk.Context, text string) error {
 		}
 		if providerError == nil {
 			return err
+		}
+		if errors.Is(providerError, errModelUsage) {
+			return providerError
 		}
 		c.Logger().ErrorContext(c.Context(), "provider conversation failed", "error", providerError)
 		return c.Reply(c.T("agent.error", "code", errcode.Unavailable.String()))

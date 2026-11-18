@@ -1,9 +1,10 @@
-// Package provider 以流式方式调用 Agent 的模型服务（Provider），
+// Package provider 调用 Agent 的模型服务（Provider），
 // 支持 OpenAI Chat Completions（官方与兼容实现）、OpenAI Responses、Anthropic Messages、Gemini GenerateContent 与 Ollama Chat 协议。
 //
 // [Client.Stream] 逐个解析 SSE 事件或 NDJSON 行，按到达顺序把文本增量交给回调；
 // 工具调用的参数完整且是 JSON 对象后才交出。流正常结束时返回停止原因与用量（[Result]）。
-// Chat Completions 以 finish_reason 和无错误结束判定成功，其他协议要求终止事件，请求失败不自动重试。接口与流语义见 spec/PLAN.md T-12 步骤 1。
+// Chat Completions 以 finish_reason 和无错误结束判定成功，其他协议要求终止事件。
+// 另提供模型发现与五种预留模型的单次请求；请求失败不自动重试。
 package provider
 
 import (
@@ -135,7 +136,7 @@ type Result struct {
 	Usage      *Usage     // Provider 未返回用量时为 nil
 }
 
-// Client 向一个 Provider 发起流式请求。
+// Client 向一个 Provider 的指定模型发起请求。
 type Client struct {
 	config     Config
 	httpClient *http.Client
@@ -148,20 +149,17 @@ type Client struct {
 // New 校验 config 并返回 Client。httpClient 不能为 nil，由调用方注入以便复用代理设置。
 // BaseURL 必须是不含用户信息、查询串与片段的 HTTP(S) 地址；OllamaChat 允许空 APIKey。
 func New(config Config, httpClient *http.Client) (*Client, error) {
-	// 1. 校验配置，不在错误中回显可能含凭证的地址。
-	if config.Protocol != OpenAI && config.Protocol != OpenAICompatible && config.Protocol != AnthropicMessages && config.Protocol != OpenAIResponses && config.Protocol != GeminiGenerateContent && config.Protocol != OllamaChat {
+	if !supportedProtocol(config.Protocol) {
 		return nil, fmt.Errorf("unsupported provider protocol %q", config.Protocol)
 	}
-	if config.Model == "" || (config.APIKey == "" && config.Protocol != OllamaChat) {
+	if config.Model == "" || config.APIKey == "" && config.Protocol != OllamaChat {
 		return nil, errors.New("provider model and API key are required")
 	}
-	baseURL, err := url.Parse(config.BaseURL)
-	if err != nil || baseURL.Host == "" || (baseURL.Scheme != "http" && baseURL.Scheme != "https") ||
-		baseURL.User != nil || baseURL.RawQuery != "" || baseURL.Fragment != "" {
-		// 不回显原始地址，避免把其中的凭证写进错误。
-		return nil, errors.New("provider base URL must be HTTP(S) without credentials, query, or fragment")
+	baseURL, err := connectionURL(config)
+	if err != nil {
+		return nil, err
 	}
-	// 2. 只构造当前协议需要的 Service，后续请求复用其显式选项。
+	// 只构造当前协议需要的 Service，后续请求复用其显式选项。
 	c := &Client{config: config, httpClient: httpClient, baseURL: baseURL}
 	switch config.Protocol {
 	case OpenAI, OpenAICompatible, OpenAIResponses:
@@ -189,6 +187,24 @@ func New(config Config, httpClient *http.Client) (*Client, error) {
 		).Messages
 	}
 	return c, nil
+}
+
+func supportedProtocol(protocol Protocol) bool {
+	switch protocol {
+	case OpenAI, OpenAICompatible, AnthropicMessages, OpenAIResponses, GeminiGenerateContent, OllamaChat:
+		return true
+	default:
+		return false
+	}
+}
+
+func connectionURL(config Config) (*url.URL, error) {
+	baseURL, err := url.Parse(config.BaseURL)
+	if err != nil || baseURL.Host == "" || (baseURL.Scheme != "http" && baseURL.Scheme != "https") ||
+		baseURL.User != nil || baseURL.RawQuery != "" || baseURL.Fragment != "" {
+		return nil, errors.New("provider base URL must be HTTP(S) without credentials, query, or fragment")
+	}
+	return baseURL, nil
 }
 
 // Stream 发出 req，并把流中的事件依次交给 emit；流正常结束时返回停止原因与用量。
@@ -303,6 +319,14 @@ func (c *Client) Stream(ctx context.Context, req Request, emit func(Event) error
 // describeError 从 Provider 的错误字段（{"message": ...} 对象或字符串）取出说明，
 // 替换其中回显的 API key 后以 ": 说明" 的形式返回；取不到说明时返回空串。
 func (c *Client) describeError(raw json.RawMessage) string {
+	message := providerErrorMessage(raw)
+	if message == "" {
+		return ""
+	}
+	return ": " + strings.ReplaceAll(message, c.config.APIKey, redactedAPIKey)
+}
+
+func providerErrorMessage(raw json.RawMessage) string {
 	var message string
 	if json.Unmarshal(raw, &message) != nil {
 		var object struct {
@@ -311,10 +335,7 @@ func (c *Client) describeError(raw json.RawMessage) string {
 		_ = json.Unmarshal(raw, &object) // 不是对象时没有说明
 		message = object.Message
 	}
-	if message == "" {
-		return ""
-	}
-	return ": " + strings.ReplaceAll(message, c.config.APIKey, redactedAPIKey)
+	return message
 }
 
 func validateRequest(req Request) error {
