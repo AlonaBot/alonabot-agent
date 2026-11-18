@@ -119,7 +119,7 @@ func scheduleTask(c *sdk.Context, arguments json.RawMessage) string {
 			trigger += "\ntimezone: " + input.Timezone
 		}
 	}
-	if err := toolapi.Confirm(c.Context(), "agent/schedule_task", taskSummary(input.Prompt, trigger), toolapi.Unspecified); err != nil {
+	if err := toolapi.Confirm(c, "agent/schedule_task", taskSummary(input.Prompt, trigger), toolapi.Unspecified); err != nil {
 		return toolResult("", err)
 	}
 	args := AgentTask{Creator: taskCreator{Instance: c.Instance(), User: c.User()}, Target: currentTaskTarget(c), Prompt: input.Prompt, CreatedAt: time.Now().UTC().Format(time.RFC3339Nano)}
@@ -132,15 +132,15 @@ func scheduleTask(c *sdk.Context, arguments json.RawMessage) string {
 	var key string
 	switch {
 	case input.At != "":
-		key, err = agentTask.At(c.Context(), at, args)
+		key, err = agentTask.At(c, at, args)
 	case input.Interval != 0:
-		key, err = agentTask.Every(c.Context(), interval, args)
+		key, err = agentTask.Every(c, interval, args)
 	case input.Cron != "":
 		var options []taskapi.Option
 		if input.Timezone != "" {
 			options = append(options, taskapi.Timezone(input.Timezone))
 		}
-		key, err = agentTask.Cron(c.Context(), input.Cron, args, options...)
+		key, err = agentTask.Cron(c, input.Cron, args, options...)
 	}
 	if err != nil {
 		return toolResult("", err)
@@ -164,7 +164,7 @@ func taskSummary(prompt, trigger string) string {
 }
 
 func listTasks(c *sdk.Context) string {
-	instances, err := agentTask.List(c.Context())
+	instances, err := agentTask.List(c)
 	if err != nil {
 		return toolResult("", err)
 	}
@@ -205,16 +205,16 @@ func cancelTask(c *sdk.Context, arguments json.RawMessage) string {
 	if input.ID == "" {
 		return toolResult("", errcode.InvalidArgument.New("id is required"))
 	}
-	if err := toolapi.Confirm(c.Context(), "agent/cancel_task", string(arguments), toolapi.Unspecified); err != nil {
+	if err := toolapi.Confirm(c, "agent/cancel_task", string(arguments), toolapi.Unspecified); err != nil {
 		return toolResult("", err)
 	}
-	instances, err := agentTask.List(c.Context())
+	instances, err := agentTask.List(c)
 	if err != nil {
 		return toolResult("", err)
 	}
 	for _, instance := range instances {
 		if instance.Key == input.ID && instance.Args.Target.sameChat(currentTaskTarget(c)) {
-			err := agentTask.Cancel(c.Context(), input.ID)
+			err := agentTask.Cancel(c, input.ID)
 			if errcode.Of(err) == errcode.NotFound {
 				return "error: NOT_FOUND"
 			}

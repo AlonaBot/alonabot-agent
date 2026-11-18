@@ -38,14 +38,14 @@ func (a *component) registerConversation(p *sdk.Plugin) {
 		c.StopPropagation()
 		return c.Continue(func(c *sdk.Context) error { return a.converse(c, chain.Text()) })
 	})
-	p.On("chat", sdk.MessageCreated).Filter(sdk.MessageFilter{TriggersConfig: "triggers", WakeWordsConfig: "wake_words"}).Rule(sdk.NotCommand()).Handle(func(c *sdk.Context) error {
+	p.On(sdk.MessageCreated).Filter(sdk.MessageFilter{TriggersConfig: "triggers", WakeWordsConfig: "wake_words"}).Rule(sdk.NotCommand()).Handle(func(c *sdk.Context) error {
 		return c.Continue(func(c *sdk.Context) error { return a.converse(c, c.Text()) })
 	})
 }
 
 func (a *component) converse(c *sdk.Context, text string) error {
 	// 1. 在延续调用内读取当前选择与最近的历史，按原序组装请求。
-	db, err := gormdb.Open(c.Context())
+	db, err := gormdb.Open(c)
 	if err != nil {
 		return memoryError(c, err)
 	}
@@ -53,7 +53,7 @@ func (a *component) converse(c *sdk.Context, text string) error {
 	lock := a.sessionLock(session)
 	// 等 reset 的代次递增和历史清空一起完成，再取得新轮次的代次。
 	lock.Lock()
-	settings, err := a.settings(c.Context(), session, db)
+	settings, err := a.settings(c, session, db)
 	if err != nil {
 		lock.Unlock()
 		return err
@@ -69,7 +69,7 @@ func (a *component) converse(c *sdk.Context, text string) error {
 		lock.Unlock()
 		return memoryError(c, err)
 	}
-	images, err := storedImages(c.Context(), db, session, settings.ImageCount)
+	images, err := storedImages(c, db, session, settings.ImageCount)
 	lock.Unlock()
 	if err != nil {
 		return err
@@ -126,10 +126,10 @@ func (a *component) converse(c *sdk.Context, text string) error {
 
 	catalog, err := a.listTools(c)
 	if err != nil {
-		if c.Context().Err() != nil {
-			return c.Context().Err()
+		if c.Err() != nil {
+			return c.Err()
 		}
-		c.Logger().ErrorContext(c.Context(), "tool directory failed", "error", err)
+		c.Logger().ErrorContext(c, "tool directory failed", "error", err)
 		return c.Reply(c.T("agent.tools_error", "code", errcode.Unavailable.String()))
 	}
 
@@ -138,7 +138,7 @@ func (a *component) converse(c *sdk.Context, text string) error {
 	var providerError error
 	var toolLimitReached bool
 	var usedCaption bool
-	retry := a.config.retryStream(c.Context(), c.Logger(), selected, prepare)
+	retry := a.config.retryStream(c, c.Logger(), selected, prepare)
 	stream := func(request provider.Request, emit func(provider.Event) error) (string, provider.Result, error) {
 		model, result, err := retry(request, emit)
 		if err == nil && attemptUsedCaption {
@@ -147,7 +147,7 @@ func (a *component) converse(c *sdk.Context, text string) error {
 		return model, result, err
 	}
 	next, stop := iter.Pull(func(yield func(string) bool) {
-		providerError = runToolLoop(c.Context(), db, provider.Request{}, catalog, stream, func(text string) error {
+		providerError = runToolLoop(c, db, provider.Request{}, catalog, stream, func(text string) error {
 			assistant.WriteString(text)
 			if !yield(text) {
 				return context.Canceled
@@ -171,8 +171,8 @@ func (a *component) converse(c *sdk.Context, text string) error {
 		return "", io.EOF
 	})
 	if err != nil {
-		if c.Context().Err() != nil {
-			return c.Context().Err()
+		if c.Err() != nil {
+			return c.Err()
 		}
 		if providerError == nil {
 			return err
@@ -180,7 +180,7 @@ func (a *component) converse(c *sdk.Context, text string) error {
 		if errors.Is(providerError, errModelUsage) {
 			return providerError
 		}
-		c.Logger().ErrorContext(c.Context(), "provider conversation failed", "error", providerError)
+		c.Logger().ErrorContext(c, "provider conversation failed", "error", providerError)
 		return c.Reply(c.T("agent.error", "code", errcode.Unavailable.String()))
 	}
 	if toolLimitReached {

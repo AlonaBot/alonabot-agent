@@ -41,12 +41,12 @@ func (a *component) settings(ctx context.Context, session string, db *gorm.DB) (
 }
 
 func (a *component) updateSettingsFor(c *sdk.Context, session string, update func(*chatSettings)) error {
-	db, err := gormdb.Open(c.Context())
+	db, err := gormdb.Open(c)
 	if err != nil {
 		return err
 	}
-	return db.WithContext(c.Context()).Transaction(func(tx *gorm.DB) error {
-		settings, err := a.settings(c.Context(), session, tx)
+	return db.WithContext(c).Transaction(func(tx *gorm.DB) error {
+		settings, err := a.settings(c, session, tx)
 		if err != nil {
 			return err
 		}
@@ -85,14 +85,14 @@ func (a *component) resetConversation(c *sdk.Context) error {
 	if err := a.updateSettingsFor(c, session, func(s *chatSettings) { s.ResetGeneration++ }); err != nil {
 		return err
 	}
-	if err := conversationapi.Clear(c.Context(), session); err != nil {
+	if err := conversationapi.Clear(c, session); err != nil {
 		return err
 	}
-	db, err := gormdb.Open(c.Context())
+	db, err := gormdb.Open(c)
 	if err != nil {
 		return err
 	}
-	return db.WithContext(c.Context()).Transaction(func(tx *gorm.DB) error {
+	return db.WithContext(c).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("session = ?", session).Delete(&conversationImage{}).Error; err != nil {
 			return err
 		}

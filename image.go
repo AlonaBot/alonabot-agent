@@ -91,13 +91,13 @@ func readImages(c *sdk.Context) []provider.Image {
 		if !ok {
 			continue
 		}
-		loaded, err := readImage(c.Context(), image.Source)
+		loaded, err := readImage(c, image.Source)
 		if err != nil {
 			reason := err.Error()
 			if incoming := image.Source.Incoming; incoming != nil && incoming.Token != "" {
 				reason = strings.ReplaceAll(reason, incoming.Token, "[REDACTED]")
 			}
-			c.Logger().WarnContext(c.Context(), "image read failed", "session", conversationKey(c), "error", reason)
+			c.Logger().WarnContext(c, "image read failed", "session", conversationKey(c), "error", reason)
 		}
 		images = append(images, loaded)
 	}
@@ -136,9 +136,9 @@ func replayImages(entry conversationEntry, images map[uint64]conversationImage, 
 func (a *component) appendImages(c *sdk.Context, db *gorm.DB, generation uint64, user conversationEntry, assistant json.RawMessage, images []provider.Image) error {
 	session := conversationKey(c)
 	var appended bool
-	err := db.WithContext(c.Context()).Transaction(func(tx *gorm.DB) error {
+	err := db.WithContext(c).Transaction(func(tx *gorm.DB) error {
 		// 1. 以最终设置核对 reset 代次，并从最新计数分配连续编号。
-		settings, err := a.settings(c.Context(), session, tx)
+		settings, err := a.settings(c, session, tx)
 		if err != nil {
 			return err
 		}
@@ -154,7 +154,7 @@ func (a *component) appendImages(c *sdk.Context, db *gorm.DB, generation uint64,
 			return fmt.Errorf("encode user conversation entry: %w", err)
 		}
 		// 2. 先取得 Core 序号；后续本地失败保留已追加的文字历史。
-		last, err := conversationapi.Append(c.Context(), session, encoded, assistant)
+		last, err := conversationapi.Append(c, session, encoded, assistant)
 		if err != nil {
 			return err
 		}
@@ -175,7 +175,7 @@ func (a *component) appendImages(c *sdk.Context, db *gorm.DB, generation uint64,
 		return tx.Where("session = ? AND number <= ?", session, imageBoundary(settings.ImageCount)).Delete(&conversationImage{}).Error
 	})
 	if err != nil && appended {
-		c.Logger().WarnContext(c.Context(), "image persistence failed after conversation append", "session", session, "error", err)
+		c.Logger().WarnContext(c, "image persistence failed after conversation append", "session", session, "error", err)
 	}
 	return err
 }

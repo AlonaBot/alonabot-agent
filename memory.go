@@ -101,11 +101,11 @@ func registerMemory(p *sdk.Plugin) {
 				}
 				scopes[operation.Target] = scope
 			}
-			db, err := gormdb.Open(c.Context())
+			db, err := gormdb.Open(c)
 			if err != nil {
 				return memoryResponse{}, err
 			}
-			return memoryResponse{}, updateMemory(db.WithContext(c.Context()), scopes, in.Operations)
+			return memoryResponse{}, updateMemory(db.WithContext(c), scopes, in.Operations)
 		})
 }
 
@@ -202,16 +202,16 @@ func memoryText(ctx context.Context, db *gorm.DB, c *sdk.Context, target string)
 
 // conversationMemory 须持有会话锁，实际空会话才允许写入第一份冻结快照。
 func (a *component) conversationMemory(c *sdk.Context, db *gorm.DB, key string) ([]conversationEntry, string, error) {
-	profile, err := memoryText(c.Context(), db, c, userTarget)
+	profile, err := memoryText(c, db, c, userTarget)
 	if err != nil {
 		return nil, "", err
 	}
-	entries, _, _, err := conversation.List(c.Context(), key, 0)
+	entries, _, _, err := conversation.List(c, key, 0)
 	if err != nil {
 		return nil, "", err
 	}
 	if len(entries) == 0 {
-		notes, err := memoryText(c.Context(), db, c, memoryTarget)
+		notes, err := memoryText(c, db, c, memoryTarget)
 		if err != nil {
 			return nil, "", err
 		}
@@ -219,19 +219,19 @@ func (a *component) conversationMemory(c *sdk.Context, db *gorm.DB, key string) 
 		if err != nil {
 			return nil, "", fmt.Errorf("encode memory snapshot: %w", err)
 		}
-		if _, err := conversation.Append(c.Context(), key, encoded); err != nil {
+		if _, err := conversation.Append(c, key, encoded); err != nil {
 			return nil, "", err
 		}
 	}
-	history, err := recentConversation(c.Context(), key, a.config.historyEntries)
+	history, err := recentConversation(c, key, a.config.historyEntries)
 	return history, profile, err
 }
 
 func memoryError(c *sdk.Context, err error) error {
-	if c.Context().Err() != nil {
-		return c.Context().Err()
+	if c.Err() != nil {
+		return c.Err()
 	}
-	c.Logger().ErrorContext(c.Context(), "memory read failed", "error", err)
+	c.Logger().ErrorContext(c, "memory read failed", "error", err)
 	code := errcode.Of(err)
 	if code == 0 {
 		code = errcode.Unavailable

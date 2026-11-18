@@ -59,7 +59,7 @@ func (a *component) generate(c *sdk.Context, req llm.Request) (llm.Response, err
 	}
 	var text strings.Builder
 	started := time.Now()
-	result, err := selected.client.Stream(c.Context(), request, func(event provider.Event) error {
+	result, err := selected.client.Stream(c, request, func(event provider.Event) error {
 		text.WriteString(event.Text)
 		return nil
 	})
@@ -68,19 +68,19 @@ func (a *component) generate(c *sdk.Context, req llm.Request) (llm.Response, err
 		fields = append(fields, "input_tokens", result.Usage.InputTokens, "output_tokens", result.Usage.OutputTokens)
 	}
 	if err != nil {
-		c.Logger().DebugContext(c.Context(), "provider generation failed", append(fields, "error_kind", providerErrorKind(err))...)
+		c.Logger().DebugContext(c, "provider generation failed", append(fields, "error_kind", providerErrorKind(err))...)
 		return llm.Response{}, errcode.Unavailable.New("provider generation failed")
 	}
-	c.Logger().DebugContext(c.Context(), "provider generation completed", fields...)
+	c.Logger().DebugContext(c, "provider generation completed", fields...)
 
 	// 3. nil 用量保持缺失，有用量时通过指针保留零值。
 	response := llm.Response{Text: text.String(), Model: selected.name}
 	if result.Usage != nil {
-		db, err := gormdb.Open(c.Context())
+		db, err := gormdb.Open(c)
 		if err != nil {
 			return llm.Response{}, fmt.Errorf("%w: %w", errModelUsage, err)
 		}
-		if err := recordUsage(c.Context(), db, selected.name, time.Now(), result.Usage); err != nil {
+		if err := recordUsage(c, db, selected.name, time.Now(), result.Usage); err != nil {
 			return llm.Response{}, fmt.Errorf("%w: %w", errModelUsage, err)
 		}
 		response.InputTokens = &result.Usage.InputTokens

@@ -21,7 +21,7 @@ func setProfile(c *sdk.Context, path string, value any) error {
 	if err != nil {
 		return err
 	}
-	response, err := profileSet.Call(c.Context(), &pb.ProfileSetRequest{Path: path, ValueJson: string(raw)})
+	response, err := profileSet.Call(c, &pb.ProfileSetRequest{Path: path, ValueJson: string(raw)})
 	if err != nil {
 		return err
 	}
@@ -38,7 +38,7 @@ func (a *component) selectProfile(c *sdk.Context, name string) error {
 	if name != "" {
 		id := ""
 		if name != "默认" && name != "default" {
-			response, err := profileList.Call(c.Context(), &pb.ProfileListRequest{})
+			response, err := profileList.Call(c, &pb.ProfileListRequest{})
 			if err != nil {
 				return err
 			}
@@ -53,11 +53,11 @@ func (a *component) selectProfile(c *sdk.Context, name string) error {
 				return c.Reply(c.T("agent.unknown_profile", "name", name, "names", strings.Join(names, ", ")))
 			}
 		}
-		if _, err := profileAssign.Call(c.Context(), &pb.ProfileAssignRequest{ProfileId: id}); err != nil {
+		if _, err := profileAssign.Call(c, &pb.ProfileAssignRequest{ProfileId: id}); err != nil {
 			return err
 		}
 	}
-	response, err := profileCurrent.Call(c.Context(), &pb.ProfileCurrentRequest{})
+	response, err := profileCurrent.Call(c, &pb.ProfileCurrentRequest{})
 	if err != nil {
 		return err
 	}
