@@ -31,17 +31,28 @@ func TestAgentPages(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 	h, admin := startModelAdmin(t, agentConfig(server.URL, provider.OpenAICompatible))
+	anonymous := modelAdmin{address: admin.address}
 	for _, page := range []string{"personas", "mcp", "skills", "data", "tasks"} {
+		anonymous.request(t, "GET", "/plugins/"+agentID+"/pages/"+page, "", 401)
 		response, body := admin.request(t, "GET", "/plugins/"+agentID+"/pages/"+page, "", 200)
 		if !strings.HasPrefix(response.Header.Get("Content-Type"), "text/html") || !strings.Contains(string(body), `href="kit.css"`) || !strings.Contains(string(body), `src="assets/pages.js"`) {
 			t.Fatalf("invalid page %s: %s", page, body)
 		}
 	}
 	for _, resource := range []struct{ path, content string }{{"kit.css", "text/css"}, {"kit.js", "javascript"}, {"assets/pages.css", "text/css"}, {"assets/pages.js", "javascript"}} {
-		response, _ := admin.request(t, "GET", "/plugins/"+agentID+"/pages/"+resource.path, "", 200)
+		response, _ := anonymous.request(t, "GET", "/plugins/"+agentID+"/pages/"+resource.path, "", 200)
 		if !strings.Contains(response.Header.Get("Content-Type"), resource.content) {
 			t.Fatalf("resource %s has type %s", resource.path, response.Header.Get("Content-Type"))
 		}
+		if got := response.Header.Get("Content-Security-Policy"); got != "sandbox allow-scripts allow-forms allow-popups" {
+			t.Fatalf("resource %s has CSP %q", resource.path, got)
+		}
+		if response.Header.Get("X-Content-Type-Options") != "nosniff" || len(response.Header.Values("Set-Cookie")) != 0 {
+			t.Fatalf("resource %s has invalid isolation headers: %v", resource.path, response.Header)
+		}
+	}
+	for _, path := range []string{"personas", "mcp", "skills", "memory", "conversation", "tasks"} {
+		anonymous.request(t, "GET", pageRoutePrefix+path, "", 401)
 	}
 	for _, locale := range []string{"en-US.json", "zh-CN.json"} {
 		var messages struct {

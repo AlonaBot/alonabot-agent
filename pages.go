@@ -17,7 +17,6 @@ import (
 	conversationapi "github.com/AlonaBot/AlonaBot/sdk/conversation"
 	"github.com/AlonaBot/AlonaBot/sdk/errcode"
 	"github.com/AlonaBot/AlonaBot/sdk/gormdb"
-	"github.com/AlonaBot/AlonaBot/sdk/page"
 	toolapi "github.com/AlonaBot/AlonaBot/sdk/tool"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -40,13 +39,11 @@ func (a *component) registerPages(p *sdk.Plugin) {
 	} {
 		p.Route(http.MethodGet, "/pages/"+declaration.path).Page(declaration.title).HandleFunc(a.servePage)
 	}
-	p.Route(http.MethodGet, "/pages/kit.css").Handle(page.Handler())
-	p.Route(http.MethodGet, "/pages/kit.js").Handle(page.Handler())
 	assets, err := fs.Sub(pageFiles, "pages/assets")
 	if err != nil {
 		panic(err)
 	} // embed 的目录在构建时确定。
-	p.Route(http.MethodGet, "/pages/assets/").Handle(http.StripPrefix("/pages/assets/", http.FileServerFS(assets)))
+	p.Route(http.MethodGet, "/pages/assets/").Public(sdk.AuthStatic).Handle(http.StripPrefix("/pages/assets/", http.FileServerFS(assets)))
 	for _, route := range []struct{ method, path string }{
 		{"GET", "personas"}, {"POST", "personas"}, {"PUT", "personas"}, {"DELETE", "personas"},
 		{"GET", "mcp"}, {"POST", "mcp/reconnect"}, {"GET", "skills"}, {"POST", "skills/reload"},
