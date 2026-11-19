@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -96,8 +97,9 @@ func waitImageState(t *testing.T, h *harness, db *sql.DB, count uint64, numbers 
 	defer ticker.Stop()
 	for {
 		var storedCount uint64
-		if err := db.QueryRowContext(h.ctx, "SELECT image_count FROM chat_settings WHERE session=?", loopSession+"@main").Scan(&storedCount); err != nil {
-			t.Fatal(err)
+		countErr := db.QueryRowContext(h.ctx, "SELECT image_count FROM chat_settings WHERE session=?", loopSession+"@main").Scan(&storedCount)
+		if countErr != nil && !errors.Is(countErr, sql.ErrNoRows) {
+			t.Fatal(countErr)
 		}
 		rows, err := db.QueryContext(h.ctx, "SELECT number FROM conversation_images WHERE session=? ORDER BY number", loopSession+"@main")
 		if err != nil {
@@ -115,7 +117,7 @@ func waitImageState(t *testing.T, h *harness, db *sql.DB, count uint64, numbers 
 			t.Fatal(err)
 		}
 		rows.Close()
-		if storedCount == count && reflect.DeepEqual(storedNumbers, numbers) {
+		if countErr == nil && storedCount == count && reflect.DeepEqual(storedNumbers, numbers) {
 			return
 		}
 		select {
