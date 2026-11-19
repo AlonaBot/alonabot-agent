@@ -35,7 +35,7 @@ func (conversationRecord) TableName() string { return "conversation_record" }
 
 func (a *component) registerPages(p *sdk.Plugin) {
 	for _, declaration := range []struct{ path, title string }{
-		{"personas", "Personas"}, {"mcp", "MCP"}, {"skills", "Skills"}, {"data", "Data"}, {"tasks", "User tasks"},
+		{"personas", "Personas"}, {"mcp", "MCP"}, {"skills", "Skills"}, {"memory", "Memory"}, {"tasks", "User tasks"},
 	} {
 		p.Route(http.MethodGet, "/pages/"+declaration.path).Page(declaration.title).HandleFunc(a.servePage)
 	}

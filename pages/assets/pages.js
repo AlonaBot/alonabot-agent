@@ -41,7 +41,7 @@
     document.querySelector('#progress').textContent = text('loading');
     try {
       let next;
-      if (page === 'data') {
+      if (page === 'memory') {
         const [conversations, memory] = await Promise.all([request('GET','conversation'),request('GET','memory')]);
         next = {...conversations,...memory};
       } else next = await request('GET',page);
@@ -205,7 +205,7 @@
       const select=node('select');select.id='target-filter';select.setAttribute('aria-label',text('target'));
       select.addEventListener('change',() => {targetFilter=select.value;currentPage=1;renderList();});toolbar.append(select);
     }
-    if (page === 'data') {
+    if (page === 'memory') {
       const tabs=node('div',undefined,'tabs');
       for (const key of ['conversations','memory','user']) {const tab=button(key,() => {section=key;currentPage=1;mount();});if (section===key) tab.setAttribute('aria-current','page');tabs.append(tab);}
       app.replaceChildren(tabs);

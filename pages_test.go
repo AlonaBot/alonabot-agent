@@ -32,7 +32,7 @@ func TestAgentPages(t *testing.T) {
 	t.Cleanup(server.Close)
 	h, admin := startModelAdmin(t, agentConfig(server.URL, provider.OpenAICompatible))
 	anonymous := modelAdmin{address: admin.address}
-	for _, page := range []string{"personas", "mcp", "skills", "data", "tasks"} {
+	for _, page := range []string{"personas", "mcp", "skills", "memory", "tasks"} {
 		anonymous.request(t, "GET", "/plugins/"+agentID+"/pages/"+page, "", 401)
 		response, body := admin.request(t, "GET", "/plugins/"+agentID+"/pages/"+page, "", 200)
 		if !strings.HasPrefix(response.Header.Get("Content-Type"), "text/html") || !strings.Contains(string(body), `href="kit.css"`) || !strings.Contains(string(body), `src="assets/pages.js"`) {
@@ -61,14 +61,14 @@ func TestAgentPages(t *testing.T) {
 		if err := json.Unmarshal(agentResources.I18n[locale], &messages); err != nil {
 			t.Fatal(err)
 		}
-		for _, page := range []string{"personas", "mcp", "skills", "data", "tasks"} {
+		for _, page := range []string{"personas", "mcp", "skills", "memory", "tasks"} {
 			if messages.Pages["/pages/"+page] == "" {
 				t.Fatalf("missing %s title in %s", page, locale)
 			}
 		}
 	}
 	_, packages := admin.request(t, "GET", "/api/v1/packages", "", 200)
-	for _, page := range []string{"personas", "mcp", "skills", "data", "tasks"} {
+	for _, page := range []string{"personas", "mcp", "skills", "memory", "tasks"} {
 		if !strings.Contains(string(packages), `"path":"/pages/`+page+`"`) {
 			t.Fatalf("missing declared page %s: %s", page, packages)
 		}
