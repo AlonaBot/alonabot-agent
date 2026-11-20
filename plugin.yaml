@@ -5,5 +5,5 @@ version: 0.1.0
 author: AlonaBot
 role: agent
 description: Official conversational agent
-source: github.com/AlonaBot/AlonaBot
+source: github.com/AlonaBot/alonabot-agent
 icon: assets/icons/agent.svg

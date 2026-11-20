@@ -10,12 +10,12 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/AlonaBot/AlonaBot/agent/provider"
 	"github.com/AlonaBot/AlonaBot/sdk"
 	conversationapi "github.com/AlonaBot/AlonaBot/sdk/conversation"
 	"github.com/AlonaBot/AlonaBot/sdk/errcode"
 	"github.com/AlonaBot/AlonaBot/sdk/gormdb"
 	"github.com/AlonaBot/AlonaBot/sdk/message"
+	"github.com/AlonaBot/alonabot-agent/provider"
 )
 
 const (

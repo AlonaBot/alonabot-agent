@@ -9,11 +9,11 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/AlonaBot/AlonaBot/agent/provider"
 	"github.com/AlonaBot/AlonaBot/sdk"
 	conversationapi "github.com/AlonaBot/AlonaBot/sdk/conversation"
 	mediaapi "github.com/AlonaBot/AlonaBot/sdk/media"
 	"github.com/AlonaBot/AlonaBot/sdk/message"
+	"github.com/AlonaBot/alonabot-agent/provider"
 	"gorm.io/gorm"
 )
 

@@ -14,8 +14,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/AlonaBot/AlonaBot/agent/provider"
 	"github.com/AlonaBot/AlonaBot/sdk/errcode"
+	"github.com/AlonaBot/alonabot-agent/provider"
 	"go.yaml.in/yaml/v3"
 )
 

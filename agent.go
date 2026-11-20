@@ -11,7 +11,6 @@ import (
 	"net/url"
 	"sync"
 
-	"github.com/AlonaBot/AlonaBot/agent/provider"
 	"github.com/AlonaBot/AlonaBot/sdk"
 	"github.com/AlonaBot/AlonaBot/sdk/config"
 	"github.com/AlonaBot/AlonaBot/sdk/gormdb"
@@ -19,6 +18,7 @@ import (
 	"github.com/AlonaBot/AlonaBot/sdk/options"
 	"github.com/AlonaBot/AlonaBot/sdk/service"
 	"github.com/AlonaBot/AlonaBot/sdk/task"
+	"github.com/AlonaBot/alonabot-agent/provider"
 	"gorm.io/gorm"
 )
 

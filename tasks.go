@@ -7,12 +7,12 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/AlonaBot/AlonaBot/agent/provider"
 	"github.com/AlonaBot/AlonaBot/sdk"
 	"github.com/AlonaBot/AlonaBot/sdk/errcode"
 	"github.com/AlonaBot/AlonaBot/sdk/message"
 	taskapi "github.com/AlonaBot/AlonaBot/sdk/task"
 	toolapi "github.com/AlonaBot/AlonaBot/sdk/tool"
+	"github.com/AlonaBot/alonabot-agent/provider"
 )
 
 const minimumTaskInterval = 60 * time.Second

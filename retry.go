@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/AlonaBot/AlonaBot/agent/provider"
+	"github.com/AlonaBot/alonabot-agent/provider"
 )
 
 const providerRetryInterval = time.Second

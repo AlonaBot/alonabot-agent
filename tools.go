@@ -10,10 +10,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/AlonaBot/AlonaBot/agent/provider"
 	"github.com/AlonaBot/AlonaBot/sdk"
 	"github.com/AlonaBot/AlonaBot/sdk/errcode"
 	toolapi "github.com/AlonaBot/AlonaBot/sdk/tool"
+	"github.com/AlonaBot/alonabot-agent/provider"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

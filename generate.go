@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AlonaBot/AlonaBot/agent/provider"
 	"github.com/AlonaBot/AlonaBot/sdk"
 	"github.com/AlonaBot/AlonaBot/sdk/errcode"
 	"github.com/AlonaBot/AlonaBot/sdk/gormdb"
 	"github.com/AlonaBot/AlonaBot/sdk/llm"
+	"github.com/AlonaBot/alonabot-agent/provider"
 )
 
 func (a *component) generate(c *sdk.Context, req llm.Request) (llm.Response, error) {

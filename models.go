@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AlonaBot/AlonaBot/agent/provider"
 	"github.com/AlonaBot/AlonaBot/sdk/gormdb"
+	"github.com/AlonaBot/alonabot-agent/provider"
 )
 
 //go:embed model_test.wav

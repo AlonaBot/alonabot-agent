@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AlonaBot/AlonaBot/agent/provider"
 	"github.com/AlonaBot/AlonaBot/sdk/errcode"
+	"github.com/AlonaBot/alonabot-agent/provider"
 	"gorm.io/gorm"
 )
 
