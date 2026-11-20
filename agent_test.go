@@ -217,12 +217,11 @@ func (a *loopback) wait(ctx context.Context, ready func([]operation) bool) bool 
 }
 
 type harness struct {
-	ctx   context.Context
-	loop  *loopback
-	db    *sql.DB
-	dir   string
-	stop  func() error
-	ready *atomic.Uint64 // OnReady 完成次数，区分命令回复与后续重载。
+	ctx  context.Context
+	loop *loopback
+	db   *sql.DB
+	dir  string
+	stop func() error
 }
 
 func startAgent(t *testing.T, loop *loopback, configuration map[string]any, coreExtra map[string]any, plugins ...*sdk.Plugin) *harness {
@@ -232,8 +231,6 @@ func startAgent(t *testing.T, loop *loopback, configuration map[string]any, core
 
 func startAgentAt(t *testing.T, dir string, loop *loopback, configuration map[string]any, coreExtra map[string]any, root *sdk.Plugin, args []string, plugins ...*sdk.Plugin) *harness {
 	t.Helper()
-	ready := &atomic.Uint64{}
-	root.OnReady(func(context.Context) error { ready.Add(1); return nil })
 	pluginDir := filepath.Join(dir, "plugins", agentID)
 	if err := os.MkdirAll(pluginDir, 0o700); err != nil {
 		t.Fatal(err)
@@ -270,14 +267,22 @@ func startAgentAt(t *testing.T, dir string, loop *loopback, configuration map[st
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
-	return &harness{ctx: ctx, loop: loop, db: db, dir: dir, stop: stop, ready: ready}
+	return &harness{ctx: ctx, loop: loop, db: db, dir: dir, stop: stop}
 }
 
-func (h *harness) waitReload(t *testing.T, before uint64) {
+func (h *harness) waitReload(t *testing.T) {
 	t.Helper()
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
-	for h.ready.Load() == before {
+	// 开发重载在新 Session 激活并发布路由后删除 Pending；OnReady 仍处于激活过程中。
+	for {
+		var pending int
+		if err := h.db.QueryRowContext(h.ctx, "SELECT count(*) FROM pending_config WHERE plugin_id = ?", agentID).Scan(&pending); err != nil {
+			t.Fatal(err)
+		}
+		if pending == 0 {
+			return
+		}
 		select {
 		case <-ticker.C:
 		case <-h.ctx.Done():
@@ -545,10 +550,9 @@ func TestAgentConversation(t *testing.T) {
 			}
 			wantCalls := int32(1)
 			if !scenario.broken {
-				generation := h.ready.Load()
 				h.deliver(t, "/provider second", "admin", "en-US", false)
 				h.waitText(t, "Profile updated: 默认 (1 sessions).\nThe Agent will reload shortly.")
-				h.waitReload(t, generation)
+				h.waitReload(t)
 				h.deliver(t, "/ask next", "member", "en-US", false)
 				h.waitEntries(t, 4)
 				wantCalls = 2
