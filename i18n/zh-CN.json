@@ -60,7 +60,8 @@
     "pages.images": "图片",
     "pages.role": "角色",
     "pages.kind": "类别",
-    "pages.speaker": "发言人"
+    "pages.speaker": "发言人",
+    "agent.input_error": "读取消息内容失败：{error}"
   },
   "commands": {
     "ask": {
