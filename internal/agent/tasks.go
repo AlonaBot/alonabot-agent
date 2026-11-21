@@ -19,7 +19,7 @@ const minimumTaskInterval = 60 * time.Second
 
 const taskSummaryBytes = 1024 // core.tool.confirm 的 UTF-8 字节上限。
 
-var agentTask = taskapi.Define[AgentTask]("agent")
+var agentTask = taskapi.Define[scheduledPrompt]("agent")
 
 type taskCreator struct {
 	Instance string `json:"instance"`
@@ -34,8 +34,8 @@ type taskTarget struct {
 	TextUnit  message.TextUnit `json:"text_unit"`  // TextLimit 的计量单位。
 }
 
-// AgentTask 保存创建者、显式发送目标和后台一轮的提示词。
-type AgentTask struct {
+// scheduledPrompt 保存创建者、显式发送目标和后台一轮的提示词。
+type scheduledPrompt struct {
 	Creator   taskCreator `json:"creator"`
 	Target    taskTarget  `json:"target"`
 	Prompt    string      `json:"prompt"`
@@ -122,7 +122,7 @@ func scheduleTask(c *sdk.Context, arguments json.RawMessage) string {
 	if err := toolapi.Confirm(c, "agent/schedule_task", taskSummary(input.Prompt, trigger), toolapi.Unspecified); err != nil {
 		return toolResult("", err)
 	}
-	args := AgentTask{Creator: taskCreator{Instance: c.Instance(), User: c.User()}, Target: currentTaskTarget(c), Prompt: input.Prompt, CreatedAt: time.Now().UTC().Format(time.RFC3339Nano)}
+	args := scheduledPrompt{Creator: taskCreator{Instance: c.Instance(), User: c.User()}, Target: currentTaskTarget(c), Prompt: input.Prompt, CreatedAt: time.Now().UTC().Format(time.RFC3339Nano)}
 	for _, capability := range c.Event().Capabilities {
 		if capability.Name == "message.send" && capability.Supported && capability.TextLimit != nil {
 			args.Target.TextLimit = capability.TextLimit.Max

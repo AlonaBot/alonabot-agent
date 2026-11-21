@@ -456,7 +456,7 @@ func (a *component) pageTasks(r *http.Request) (any, error) {
 	}
 	type listedTask struct {
 		Key string `json:"key"`
-		AgentTask
+		scheduledPrompt
 		At       *time.Time `json:"at,omitempty"`
 		Interval int64      `json:"interval_seconds,omitempty"`
 		Cron     string     `json:"cron,omitempty"`
@@ -465,7 +465,7 @@ func (a *component) pageTasks(r *http.Request) (any, error) {
 	}
 	tasks := []listedTask{}
 	for _, instance := range instances {
-		task := listedTask{Key: instance.Key, AgentTask: instance.Args, Interval: int64(instance.Interval / time.Second), Cron: instance.Cron, Timezone: instance.Timezone, NextAt: instance.NextAt}
+		task := listedTask{Key: instance.Key, scheduledPrompt: instance.Args, Interval: int64(instance.Interval / time.Second), Cron: instance.Cron, Timezone: instance.Timezone, NextAt: instance.NextAt}
 		if !instance.At.IsZero() {
 			task.At = &instance.At
 		}
