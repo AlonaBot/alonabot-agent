@@ -1,7 +1,7 @@
 # AlonaBot 官方 Agent
 
 [![Go component](https://github.com/AlonaBot/alonabot-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/AlonaBot/alonabot-agent/actions/workflows/ci.yml)
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 官方 Agent通过 AlonaBot SDK 与 Core 通信，独立安装、升级和替换。组件版本为 `0.1.0`。
 ## 引用节点与图片
@@ -34,7 +34,7 @@ alonabot pack . --target linux/amd64 --out bin
 
 ## 许可
 
-采用 [GNU AGPL-3.0-only](LICENSE)。
+采用 [MIT](LICENSE)。
 
 ## 目录
 
