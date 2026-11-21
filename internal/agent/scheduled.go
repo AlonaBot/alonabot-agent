@@ -14,7 +14,7 @@ import (
 	"github.com/AlonaBot/alonabot-agent/provider"
 )
 
-func (a *component) scheduled(c *sdk.Context, task AgentTask) error {
+func (a *component) scheduled(c *sdk.Context, task scheduledPrompt) error {
 	key := c.Event().Payload.(*message.ScheduledPayload).TaskKey
 	err := a.runScheduled(c, "task/"+key, task)
 	if err != nil {
@@ -27,7 +27,7 @@ func (a *component) scheduled(c *sdk.Context, task AgentTask) error {
 	return err
 }
 
-func (a *component) runScheduled(c *sdk.Context, session string, task AgentTask) error {
+func (a *component) runScheduled(c *sdk.Context, session string, task scheduledPrompt) error {
 	// 1. 使用调度调用的配置视图，历史仅使用独立的任务会话；不读取记忆服务。
 	db, err := gormdb.Open(c)
 	if err != nil {

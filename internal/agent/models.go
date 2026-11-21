@@ -15,7 +15,7 @@ import (
 	"github.com/AlonaBot/alonabot-agent/provider"
 )
 
-//go:embed model_test.wav
+//go:embed testdata/model_test.wav
 var modelTestWAV []byte
 
 type modelDiscoveryRequest struct {
