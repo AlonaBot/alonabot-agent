@@ -25,25 +25,27 @@ const (
 )
 
 type conversationEntry struct {
-	Role    string   `json:"role"`
-	Kind    string   `json:"kind,omitempty"`
-	Speaker string   `json:"speaker,omitempty"` // 群聊 user 条目的平台外部用户 ID。
-	Content string   `json:"content"`
-	Images  []uint64 `json:"images,omitempty"`
-	seq     uint64   // 读取时保留 Core 序号，校验图片所属条目；不写入 JSON。
+	Role       string   `json:"role"`
+	Kind       string   `json:"kind,omitempty"`
+	Speaker    string   `json:"speaker,omitempty"` // 群聊 user 条目的平台外部用户 ID。
+	Content    string   `json:"content"`
+	Images     []uint64 `json:"images,omitempty"`
+	ImagePaths []string `json:"image_paths,omitempty"` // 与 Images 同序的节点路径；普通顶层图片省略。
+	seq        uint64   // 读取时保留 Core 序号，校验图片所属条目；不写入 JSON。
 }
 
 func (a *component) registerConversation(p *sdk.Plugin) {
 	p.Command("ask").Args("text").Permission(sdk.User).Description("Ask the agent").Handle(func(c *sdk.Context, chain message.Chain) error {
 		c.StopPropagation()
-		return c.Continue(func(c *sdk.Context) error { return a.converse(c, chain.Text()) })
+		return c.Continue(func(c *sdk.Context) error { return a.converse(c, chain) })
 	})
 	p.On(sdk.MessageCreated).Filter(sdk.MessageFilter{TriggersConfig: "triggers", WakeWordsConfig: "wake_words"}).Rule(sdk.NotCommand()).Handle(func(c *sdk.Context) error {
-		return c.Continue(func(c *sdk.Context) error { return a.converse(c, c.Text()) })
+		chain := c.Event().Payload.(*message.CreatedPayload).Chain
+		return c.Continue(func(c *sdk.Context) error { return a.converse(c, chain) })
 	})
 }
 
-func (a *component) converse(c *sdk.Context, text string) error {
+func (a *component) converse(c *sdk.Context, chain message.Chain) error {
 	// 1. 在延续调用内读取当前选择与最近的历史，按原序组装请求。
 	db, err := gormdb.Open(c)
 	if err != nil {
@@ -74,15 +76,17 @@ func (a *component) converse(c *sdk.Context, text string) error {
 	if err != nil {
 		return err
 	}
-	incoming := readImages(c)
-	var imagesToSave []provider.Image
-	plainText := text
-	for _, image := range incoming {
-		if len(image.Data) > 0 {
-			imagesToSave = append(imagesToSave, image)
-		} else {
-			plainText = prependImages(plainText, 1)
-		}
+	input, err := readConversationInput(c, chain)
+	if err != nil {
+		c.Logger().ErrorContext(c, "message content read failed", "error", err)
+		return errors.Join(err, c.Reply(c.T("agent.input_error", "error", err.Error())))
+	}
+	incoming := input.images
+	imagesToSave := incoming
+	plainText := input.text.String()
+	attached := make([]bool, len(incoming))
+	for index := range attached {
+		attached[index] = true
 	}
 	var prefix []provider.Message
 	prompt, err := a.personaPrompt(c, c.Config().String("default_persona"))
@@ -114,14 +118,15 @@ func (a *component) converse(c *sdk.Context, text string) error {
 		switch {
 		case model.imageInput:
 			current.Images = imagesToSave
+			current.Content = imageLegend(plainText, input.imagePaths, attached)
 		case attemptUsedCaption:
 			// 转述每轮只发一次；带图片的回退模型仍读取原图。
 			if captioned == nil {
-				captioned = new(a.captionImages(c, db, captionModel, text, incoming))
+				captioned = new(a.captionImages(c, db, captionModel, plainText, incoming, input.imagePaths))
 			}
 			current.Content = *captioned
 		default:
-			current.Content = prependImages(plainText, len(imagesToSave))
+			current.Content = imageLegend(prependImages(plainText, len(imagesToSave)), input.imagePaths, make([]bool, len(incoming)))
 		}
 		request.Messages = append(append(messages, current), request.Messages...)
 		return request
@@ -191,10 +196,11 @@ func (a *component) converse(c *sdk.Context, text string) error {
 	}
 
 	// 3. 生成和显示成功后，仅将仍属于当前 reset 代次的轮次原子追加。
-	user := conversationEntry{Role: roleUser, Content: plainText}
+	user := conversationEntry{Role: roleUser, Content: plainText, ImagePaths: input.imagePaths}
 	if usedCaption {
 		user.Content = *captioned
 		imagesToSave = nil
+		user.ImagePaths = nil
 	}
 	if c.Event().ChatType == message.ChatGroup && c.Event().Actor != nil {
 		user.Speaker = c.Event().Actor.ExternalUserID

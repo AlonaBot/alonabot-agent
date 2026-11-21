@@ -2,6 +2,7 @@ package agent
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -10,13 +11,12 @@ import (
 	"gorm.io/gorm"
 )
 
-// captionImages 按原顺序输出描述；未读到的图片和转述失败的图片保留占位。
-func (a *component) captionImages(c *sdk.Context, db *gorm.DB, model *configuredModel, text string, images []provider.Image) string {
+// captionImages 按原顺序输出描述与来源路径，转述失败的图片保留占位。
+func (a *component) captionImages(c *sdk.Context, db *gorm.DB, model *configuredModel, text string, images []provider.Image, paths []string) string {
 	var content strings.Builder
-	for _, image := range images {
-		if len(image.Data) == 0 {
-			content.WriteString(imagePlaceholder + "\n")
-			continue
+	for index, image := range images {
+		if len(paths) > 0 {
+			fmt.Fprintf(&content, "[source: %s]\n", paths[index])
 		}
 		if c.Err() != nil {
 			break

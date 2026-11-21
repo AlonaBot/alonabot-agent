@@ -60,7 +60,8 @@
     "pages.images": "Images",
     "pages.role": "Role",
     "pages.kind": "Kind",
-    "pages.speaker": "Speaker"
+    "pages.speaker": "Speaker",
+    "agent.input_error": "Message content could not be read: {error}"
   },
   "config": {
     "skills_dir": {

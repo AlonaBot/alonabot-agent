@@ -5,7 +5,7 @@ go 1.27.1
 tool google.golang.org/protobuf/cmd/protoc-gen-go
 
 require (
-	github.com/AlonaBot/AlonaBot v0.0.0-20261121011820-c3006b954c6f
+	github.com/AlonaBot/AlonaBot v0.1.1-0.20261121053743-7ca08ec8967e
 	github.com/anthropics/anthropic-sdk-go/v2 v2.9.0
 	github.com/modelcontextprotocol/go-sdk v1.3.1
 	github.com/openai/openai-go/v3 v3.98.0
@@ -38,6 +38,7 @@ require (
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
+	github.com/yuin/goldmark v1.7.16 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/otel v1.33.0 // indirect
 	go.opentelemetry.io/otel/metric v1.33.0 // indirect

@@ -83,27 +83,6 @@ func supportedImageMIME(mime string) bool {
 	}
 }
 
-// readImages 保留入站图片顺序；读失败的槽位只用于生成占位。
-func readImages(c *sdk.Context) []provider.Image {
-	var images []provider.Image
-	for _, segment := range c.Event().Payload.(*message.CreatedPayload).Chain {
-		image, ok := segment.(message.ImageSegment)
-		if !ok {
-			continue
-		}
-		loaded, err := readImage(c, image.Source)
-		if err != nil {
-			reason := err.Error()
-			if incoming := image.Source.Incoming; incoming != nil && incoming.Token != "" {
-				reason = strings.ReplaceAll(reason, incoming.Token, "[REDACTED]")
-			}
-			c.Logger().WarnContext(c, "image read failed", "session", conversationKey(c), "error", reason)
-		}
-		images = append(images, loaded)
-	}
-	return images
-}
-
 func storedImages(ctx context.Context, db *gorm.DB, session string, count uint64) (map[uint64]conversationImage, error) {
 	images := make(map[uint64]conversationImage)
 	if count == 0 {
@@ -121,14 +100,17 @@ func storedImages(ctx context.Context, db *gorm.DB, session string, count uint64
 
 func replayImages(entry conversationEntry, images map[uint64]conversationImage, enabled bool) provider.Message {
 	result := provider.Message{Role: entry.Role, Content: entry.Content}
-	for _, number := range entry.Images {
+	attached := make([]bool, len(entry.Images))
+	for index, number := range entry.Images {
 		image, ok := images[number]
 		if enabled && ok && image.Seq == entry.seq {
 			result.Images = append(result.Images, provider.Image{MediaType: image.MIME, Data: image.Bytes})
+			attached[index] = true
 		} else {
 			result.Content = prependImages(result.Content, 1)
 		}
 	}
+	result.Content = imageLegend(result.Content, entry.ImagePaths, attached)
 	return result
 }
 
