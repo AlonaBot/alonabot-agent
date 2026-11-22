@@ -55,3 +55,8 @@ th { color: var(--ab-text-muted); font-weight: 400; }
  td::before { content: attr(data-label); color: var(--ab-text-muted); }
  td .secondary { grid-column: 2; }
 }
+.skeleton-list { display: grid; gap: 12px; padding: 18px 0; }
+.skeleton { display: block; height: 44px; border-radius: var(--ab-radius); background: linear-gradient(90deg, var(--ab-surface-2) 25%, color-mix(in srgb, var(--ab-line) 60%, var(--ab-surface-2)) 50%, var(--ab-surface-2) 75%); background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite; }
+#app[aria-busy="true"] .list { opacity: .6; transition: opacity .2s; }
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
