@@ -66,10 +66,10 @@ func (a *component) registerCommands(p *sdk.Plugin) {
 		c.StopPropagation()
 		return setProfile(c, "triggers", []string{})
 	})
-	p.Command("persona").Args("name").Optional("name").Permission(sdk.Admin).Description("List personas or select one for the current profile").Handle(a.selectPersona)
-	p.Command("provider").Args("name").Optional("name").Permission(sdk.Admin).Description("List chat models or select one for the current profile").Handle(a.selectModel)
-	p.Command("profile").Args("name").Optional("name").Permission(sdk.Admin).Description("Show or select a configuration profile").Handle(a.selectProfile)
-	p.Command("reset").Permission(sdk.User).Description("Clear this conversation").Handle(func(c *sdk.Context) error {
+	p.Command("persona").Args("name").Optional("name").Permission(sdk.Admin).Description("List personas or select one for the current profile").Menu().Handle(a.selectPersona)
+	p.Command("provider").Args("name").Optional("name").Permission(sdk.Admin).Description("List chat models or select one for the current profile").Menu().Handle(a.selectModel)
+	p.Command("profile").Args("name").Optional("name").Permission(sdk.Admin).Description("Show or select a configuration profile").Menu().Handle(a.selectProfile)
+	p.Command("reset").Permission(sdk.User).Description("Clear this conversation").Menu().Handle(func(c *sdk.Context) error {
 		c.StopPropagation()
 		if err := a.resetConversation(c); err != nil {
 			return err
