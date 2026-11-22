@@ -35,7 +35,7 @@ type conversationEntry struct {
 }
 
 func (a *component) registerConversation(p *sdk.Plugin) {
-	p.Command("ask").Args("text").Permission(sdk.User).Description("Ask the agent").Handle(func(c *sdk.Context, chain message.Chain) error {
+	p.Command("ask").Args("text").Permission(sdk.User).Description("Ask the agent").Menu().Handle(func(c *sdk.Context, chain message.Chain) error {
 		c.StopPropagation()
 		return c.Continue(func(c *sdk.Context) error { return a.converse(c, chain) })
 	})

@@ -3,7 +3,7 @@
 [![Go component](https://github.com/AlonaBot/alonabot-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/AlonaBot/alonabot-agent/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-官方 Agent通过 AlonaBot SDK 与 Core 通信，独立安装、升级和替换。组件版本为 `0.1.0`。
+官方 Agent通过 AlonaBot SDK 与 Core 通信，独立安装、升级和替换。组件版本为 `0.2.0`。
 ## 引用节点与图片
 
 普通触发和 `/ask` 共用完整消息链，递归读取合并转发的每个节点，保留作者、时间、正文及图片来源路径。引用节点按 Core 的当前会话授权读取；图片经 `media.Open` 取件后交给 Provider，节点作者作为当前用户提供的引用来源进入请求。
