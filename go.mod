@@ -5,7 +5,7 @@ go 1.27.1
 tool google.golang.org/protobuf/cmd/protoc-gen-go
 
 require (
-	github.com/AlonaBot/AlonaBot v0.2.1-0.20261123041312-5f0a710db020
+	github.com/AlonaBot/AlonaBot v0.2.1-0.20261123084812-a423fe787cf9
 	github.com/anthropics/anthropic-sdk-go/v2 v2.9.0
 	github.com/modelcontextprotocol/go-sdk v1.3.1
 	github.com/openai/openai-go/v3 v3.98.0
