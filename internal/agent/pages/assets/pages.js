@@ -187,14 +187,17 @@
         list.append(card(record.scope,record.instance,[button('edit',() => editMemory(record)),button('delete',() => confirmDelete(record.scope,() => request('DELETE','memory',{target:record.target,scope:record.scope,instance:record.instance})),'ab-btn-danger')],preview));
       }
     }
-    footer.append(node('span',`${text('count')}: ${records.length}`,'muted'));
-    const controls = node('nav',undefined,'page-numbers'); controls.setAttribute('aria-label',text('entries'));
-    for (let number=1;number<=pages;number++) {
-      const control = node('button',String(number)); control.type = 'button';
-      if (number === currentPage) { control.setAttribute('aria-current','page'); control.disabled = true; }
-      control.addEventListener('click',() => {currentPage=number;renderList();}); controls.append(control);
+    // 没有记录时列表里已有空状态，不再显示计数；只有一页时不显示页码。
+    if (records.length) footer.append(node('span',`${text('count')}: ${records.length}`,'muted'));
+    if (pages > 1) {
+      const controls = node('nav',undefined,'page-numbers'); controls.setAttribute('aria-label',text('entries'));
+      for (let number=1;number<=pages;number++) {
+        const control = node('button',String(number)); control.type = 'button';
+        if (number === currentPage) { control.setAttribute('aria-current','page'); control.disabled = true; }
+        control.addEventListener('click',() => {currentPage=number;renderList();}); controls.append(control);
+      }
+      footer.append(controls);
     }
-    footer.append(controls);
     if (page === 'tasks') {
       const select = document.querySelector('#target-filter'), selected = select.value;
       select.replaceChildren(node('option',text('target'))); select.firstChild.value = '';
