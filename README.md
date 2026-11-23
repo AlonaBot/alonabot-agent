@@ -6,7 +6,7 @@ Conversational agent with configurable models, personas, tools, and quoted or fo
 
 ## Quick start
 
-Use Core v0.2.0 or later. On the machine running Core:
+Use Core v0.3.0 or later. On the machine running Core:
 
 ```fish
 alonabot install --source AlonaBot/alonabot-agent --yes
