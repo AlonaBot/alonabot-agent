@@ -4,8 +4,8 @@ cloud.google.com/go/auth/oauth2adapt v0.2.3 h1:MlxF+Pd3OmSudg/b1yZ5lJwoXCEaeedAg
 cloud.google.com/go/auth/oauth2adapt v0.2.3/go.mod h1:tMQXOfZzFuNuUxOypHlQEXgdfX5cuhwU+ffUuXRJE8I=
 cloud.google.com/go/compute/metadata v0.5.0 h1:Zr0eK8JbFv6+Wi4ilXAR8FJ3wyNdpxHKJNPos6LTZOY=
 cloud.google.com/go/compute/metadata v0.5.0/go.mod h1:aHnloV2TPI38yx4s9+wAZhHykWvVCfu7hQbF+9CWoiY=
-github.com/AlonaBot/AlonaBot v0.2.1-0.20261123041312-5f0a710db020 h1:DybTn5vu9P69aMETL4Um2GV8LlprWP5BazUUKAscf2A=
-github.com/AlonaBot/AlonaBot v0.2.1-0.20261123041312-5f0a710db020/go.mod h1:tCzyYoM/myXWV+X+DBWfIv2JCho1mNcjcI1F+j+rxEY=
+github.com/AlonaBot/AlonaBot v0.2.1-0.20261123084812-a423fe787cf9 h1:LjMByNUxe0HCbQUlo3RrGSc90hmnyaoWTQdoWnhAG8w=
+github.com/AlonaBot/AlonaBot v0.2.1-0.20261123084812-a423fe787cf9/go.mod h1:tCzyYoM/myXWV+X+DBWfIv2JCho1mNcjcI1F+j+rxEY=
 github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.3 h1:qgnWTiWs1G7AqcKZegFvkJD1bmXJcaDU3uC0ELSgZ5U=
 github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.3/go.mod h1:XtxD48QPInqoj+GMlcRlXHEYsoOxFnP6w2JgIZ9rDS4=
 github.com/Azure/azure-sdk-for-go/sdk/internal v1.13.0 h1:Terj1CMW4+NY5CpWjSRkqLoxh2DkYDdv/FH2z0897Uc=
