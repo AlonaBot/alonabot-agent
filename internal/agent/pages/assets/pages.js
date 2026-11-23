@@ -7,7 +7,7 @@
   const api = window.AlonaBot;
   const keys = ['search','refresh','empty','loading','new_persona','edit','delete','cancel','save','name','prompt','references','sessions','reconnect','tools','reload','skill_hint','problems','memory','user','conversations','view','scope','instance','entries','add_entry','confirm_delete','task','creator','target','trigger','next_at','created_at','close','disconnected','connected','error','count','images','role','kind','speaker'];
   let words = {}, state, filter = '', currentPage = 1, section = 'conversations', targetFilter = '';
-  let localeVersion = 0;
+  let localeVersion = 0, loadFailure = null;
   const pageSize = 8;
   const text = key => words[key] || `pages.${key}`;
   function node(tag, value, className) {
@@ -41,7 +41,7 @@
   }
   function errorRegion() { const region = node('p',undefined,'error'); region.setAttribute('role','alert'); region.hidden = true; return region; }
   async function load() {
-    const error = document.querySelector('#page-error'); error.hidden = true;
+    const error = document.querySelector('#page-error'); if (error) error.hidden = true;
     app.setAttribute('aria-busy','true');
     try {
       let next;
@@ -50,7 +50,7 @@
         next = {...conversations,...memory};
       } else next = await request('GET',page);
       state = next; renderList();
-    } catch (failure) { errorAt(error,failure); }
+    } catch (failure) { if (error) errorAt(error,failure); else loadFailure = failure; }
     finally { app.setAttribute('aria-busy','false'); }
   }
   function openDialog(title, content, save) {
@@ -73,7 +73,7 @@
   function field(key, control) { const row = node('label',undefined,'field'); row.append(label(key),control); return row; }
   function editPersona(persona) {
     const fields = node('div'), name = node('input'), prompt = node('textarea');
-    name.required = true; name.value = persona?.name || ''; name.readOnly = !!persona;
+    name.type = 'text'; name.required = true; name.value = persona?.name || ''; name.readOnly = !!persona;
     prompt.value = persona?.prompt || ''; prompt.rows = 10;
     fields.append(field('name',name),field('prompt',prompt));
     openDialog(label(persona ? 'edit' : 'new_persona'),fields,() => request(persona ? 'PUT' : 'POST','personas',{name:name.value,prompt:prompt.value}));
@@ -144,6 +144,7 @@
   }
   function renderList() {
     const list = document.querySelector('#list'), footer = document.querySelector('#pagination');
+    if (!list) return;
     // 首次加载还没有数据时用骨架占位；刷新时保留旧列表，由 #app[aria-busy] 变淡。
     if (!state) { list.replaceChildren(skeleton(4)); return; }
     list.replaceChildren(); footer.replaceChildren();
@@ -227,6 +228,7 @@
     }));
     toolbar.append(actions); const error=errorRegion();error.id='page-error';
     if (previousError && !previousError.hidden) {error.textContent=previousError.textContent;error.hidden=false;}
+    else if (loadFailure) {errorAt(error,loadFailure);loadFailure=null;}
     const list=node('section',undefined,'ab-card list');list.id='list';const footer=node('footer');footer.id='pagination';
     app.append(toolbar,error,list,footer);
     if (page==='skills') app.append(node('p',text('skill_hint'),'muted'));
@@ -238,9 +240,10 @@
       const entries=await Promise.all(keys.map(async key => [key,await api.t(`pages.${key}`)]));
       if (version!==localeVersion)return;words=Object.fromEntries(entries);mount();
       for (const element of dialog.querySelectorAll('[data-i18n]')) element.textContent=text(element.dataset.i18n);
-    } catch (failure) {const error=document.querySelector('#page-error');if(error)errorAt(error,failure);}
+    } catch (failure) {if (version!==localeVersion)return;mount();errorAt(document.querySelector('#page-error'),failure);}
   }
   api.onLocale(locale => {document.documentElement.lang=locale;void translate();});
   api.onTheme(theme => {document.documentElement.style.colorScheme=theme;});
-  mount(); void load();
+  // 文案到达前只显示骨架，避免先闪出翻译键。
+  app.replaceChildren(skeleton(4)); void load();
 })();
