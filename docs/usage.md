@@ -2,7 +2,7 @@
 
 [简体中文](usage.zh-CN.md)
 
-After installation, add a provider in the WebUI model settings with a name, protocol, base URL, and API key. Add a chat model referencing that provider and select it as `chat_model`. Provider protocols are `openai`, `openai-compatible`, `anthropic-messages`, `openai-responses`, `gemini-generate-content`, and `ollama-chat`. [config_schema.json](../config_schema.json) defines the configuration.
+After installation, add a provider in the WebUI model settings with a name, protocol, base URL, and API key. Add a chat model referencing that provider and select it as `chat_model`. Provider protocols are `openai`, `openai-compatible`, `anthropic-messages`, `openai-responses`, `gemini-generate-content`, and `ollama-chat`. [plugin_config_schema.json](../plugin_config_schema.json) defines the configuration.
 
 ## Conversations and models
 

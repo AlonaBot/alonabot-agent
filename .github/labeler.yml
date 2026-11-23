@@ -10,4 +10,4 @@
       - any-glob-to-any-file: [".github/**"]
 "area: agent":
   - changed-files:
-      - any-glob-to-any-file: ["agent.go", "internal/agent/**", "provider/**", "config_schema.json", "assets/**", "cmd/**", "plugin.yaml", "i18n/**", "go.mod", "go.sum"]
+      - any-glob-to-any-file: ["agent.go", "internal/agent/**", "provider/**", "plugin_config_schema.json", "assets/**", "cmd/**", "plugin.yaml", "i18n/**", "go.mod", "go.sum"]

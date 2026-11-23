@@ -2,7 +2,7 @@
 
 [English](usage.md)
 
-安装后，在 WebUI 的模型设置中添加 Provider，填写名称、协议、地址及 API key，再添加引用该 Provider 的聊天模型并选择 `chat_model`。Provider 协议支持 `openai`、`openai-compatible`、`anthropic-messages`、`openai-responses`、`gemini-generate-content` 与 `ollama-chat`，以 [config_schema.json](../config_schema.json) 为配置依据。
+安装后，在 WebUI 的模型设置中添加 Provider，填写名称、协议、地址及 API key，再添加引用该 Provider 的聊天模型并选择 `chat_model`。Provider 协议支持 `openai`、`openai-compatible`、`anthropic-messages`、`openai-responses`、`gemini-generate-content` 与 `ollama-chat`，以 [plugin_config_schema.json](../plugin_config_schema.json) 为配置依据。
 
 ## 对话与模型
 
