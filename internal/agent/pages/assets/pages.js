@@ -17,6 +17,11 @@
     return element;
   }
   function label(key) { const element = node('span',text(key)); element.dataset.i18n = key; return element; }
+  function skeleton(rows) {
+    const box = node('div',undefined,'skeleton-list'); box.setAttribute('role','status'); box.setAttribute('aria-label',text('loading'));
+    for (let index = 0; index < rows; index++) box.append(node('span',undefined,'skeleton'));
+    return box;
+  }
   function button(key, action, className) {
     const element = node('button',undefined,className);
     element.type = 'button'; element.append(label(key)); element.addEventListener('click',action); return element;
@@ -38,7 +43,6 @@
   async function load() {
     const error = document.querySelector('#page-error'); error.hidden = true;
     app.setAttribute('aria-busy','true');
-    document.querySelector('#progress').textContent = text('loading');
     try {
       let next;
       if (page === 'memory') {
@@ -47,7 +51,7 @@
       } else next = await request('GET',page);
       state = next; renderList();
     } catch (failure) { errorAt(error,failure); }
-    finally { app.setAttribute('aria-busy','false'); document.querySelector('#progress').textContent = ''; }
+    finally { app.setAttribute('aria-busy','false'); }
   }
   function openDialog(title, content, save) {
     dialog.replaceChildren();
@@ -107,7 +111,7 @@
     openDialog(server.name,content);
   }
   async function showConversation(key) {
-    const content = node('div',undefined,'conversation'), progress = label('loading'), error = errorRegion();
+    const content = node('div',undefined,'conversation'), progress = skeleton(3), error = errorRegion();
     content.append(progress,error); openDialog(key,content);
     const form = dialog.querySelector('form'); form.lastChild.replaceChildren(button('close',() => dialog.close()));
     let from = 0;
@@ -139,8 +143,10 @@
     const controls = node('div',undefined,'row-actions'); controls.append(...actions); row.append(controls); return row;
   }
   function renderList() {
-    if (!state) return;
-    const list = document.querySelector('#list'), footer = document.querySelector('#pagination'); list.replaceChildren(); footer.replaceChildren();
+    const list = document.querySelector('#list'), footer = document.querySelector('#pagination');
+    // 首次加载还没有数据时用骨架占位；刷新时保留旧列表，由 #app[aria-busy] 变淡。
+    if (!state) { list.replaceChildren(skeleton(4)); return; }
+    list.replaceChildren(); footer.replaceChildren();
     let records = page === 'personas' ? state.personas : page === 'mcp' ? state.servers : page === 'skills' ? [...state.skills,...state.problems.map(problem => ({...problem,problem:true}))] : page === 'tasks' ? state.tasks : section === 'conversations' ? state.conversations : state.records.filter(record => record.target === section);
     records = records.filter(record => JSON.stringify(record).toLocaleLowerCase().includes(filter.toLocaleLowerCase()) && (!targetFilter || record.target?.chat === targetFilter));
     const pages = Math.max(1,Math.ceil(records.length/pageSize)); currentPage = Math.min(currentPage,pages);
@@ -181,14 +187,17 @@
         list.append(card(record.scope,record.instance,[button('edit',() => editMemory(record)),button('delete',() => confirmDelete(record.scope,() => request('DELETE','memory',{target:record.target,scope:record.scope,instance:record.instance})),'ab-btn-danger')],preview));
       }
     }
-    footer.append(node('span',`${text('count')}: ${records.length}`,'muted'));
-    const controls = node('nav',undefined,'page-numbers'); controls.setAttribute('aria-label',text('entries'));
-    for (let number=1;number<=pages;number++) {
-      const control = node('button',String(number)); control.type = 'button';
-      if (number === currentPage) { control.setAttribute('aria-current','page'); control.disabled = true; }
-      control.addEventListener('click',() => {currentPage=number;renderList();}); controls.append(control);
+    // 没有记录时列表里已有空状态，不再显示计数；只有一页时不显示页码。
+    if (records.length) footer.append(node('span',`${text('count')}: ${records.length}`,'muted'));
+    if (pages > 1) {
+      const controls = node('nav',undefined,'page-numbers'); controls.setAttribute('aria-label',text('entries'));
+      for (let number=1;number<=pages;number++) {
+        const control = node('button',String(number)); control.type = 'button';
+        if (number === currentPage) { control.setAttribute('aria-current','page'); control.disabled = true; }
+        control.addEventListener('click',() => {currentPage=number;renderList();}); controls.append(control);
+      }
+      footer.append(controls);
     }
-    footer.append(controls);
     if (page === 'tasks') {
       const select = document.querySelector('#target-filter'), selected = select.value;
       select.replaceChildren(node('option',text('target'))); select.firstChild.value = '';
@@ -218,9 +227,8 @@
     }));
     toolbar.append(actions); const error=errorRegion();error.id='page-error';
     if (previousError && !previousError.hidden) {error.textContent=previousError.textContent;error.hidden=false;}
-    const progress=node('p',undefined,'muted');progress.id='progress';progress.setAttribute('role','status');
     const list=node('section',undefined,'ab-card list');list.id='list';const footer=node('footer');footer.id='pagination';
-    app.append(toolbar,error,progress,list,footer);
+    app.append(toolbar,error,list,footer);
     if (page==='skills') app.append(node('p',text('skill_hint'),'muted'));
     renderList();
   }

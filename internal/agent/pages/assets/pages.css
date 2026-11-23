@@ -1,5 +1,5 @@
 /* Agent 页面布局，颜色与控件沿用页面套件。 */
-body { padding: 18px 0; }
+body { padding: 0 0 24px; background: transparent; }
 main { width: 100%; }
 .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
 .toolbar input[type="search"] { width: 280px; max-width: 100%; }
@@ -17,10 +17,10 @@ main { width: 100%; }
 .error, .problem .secondary, .status.error { color: var(--ab-danger); white-space: pre-wrap; overflow-wrap: anywhere; }
 .status.connected { color: var(--ab-success); }
 .status { flex: 1; }
-.empty { text-align: center; padding: 48px 16px; }
+.empty { text-align: center; padding: 48px 16px; color: var(--ab-text-muted); }
 footer { margin-top: 16px; display: flex; justify-content: space-between; gap: 20px; align-items: center; }
 .page-numbers { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
-[aria-current="page"] { color: var(--ab-surface); background: var(--ab-text); }
+[aria-current="page"], [aria-current="page"]:disabled { color: var(--ab-accent); background: var(--ab-accent-soft); border-color: transparent; opacity: 1; }
 .tabs { display: inline-flex; gap: 4px; margin-bottom: 16px; }
 .tabs button { border: 0; }
 dialog { color: var(--ab-text); background: var(--ab-surface); border: 1px solid var(--ab-line); border-radius: var(--ab-radius-lg); padding: 24px; width: min(680px,calc(100% - 32px)); max-height: 85vh; overflow: auto; }
@@ -55,3 +55,8 @@ th { color: var(--ab-text-muted); font-weight: 400; }
  td::before { content: attr(data-label); color: var(--ab-text-muted); }
  td .secondary { grid-column: 2; }
 }
+.skeleton-list { display: grid; gap: 12px; padding: 18px 0; }
+.skeleton { display: block; height: 44px; border-radius: var(--ab-radius); background: linear-gradient(90deg, var(--ab-surface-2) 25%, color-mix(in srgb, var(--ab-line) 60%, var(--ab-surface-2)) 50%, var(--ab-surface-2) 75%); background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite; }
+#app[aria-busy="true"] .list { opacity: .6; transition: opacity .2s; }
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
