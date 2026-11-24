@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -47,6 +48,8 @@ func (s *configuration) retryStream(ctx context.Context, logger *slog.Logger, se
 					return "", provider.Result{}, err
 				}
 				current.MaxTokens = model.maxTokens
+				started := time.Now()
+				logger.InfoContext(ctx, fmt.Sprintf("Agent is requesting model %s (attempt %d)", model.name, attempt), "model", model.name, "attempt", attempt)
 				delivered := false
 				result, err := model.client.Stream(ctx, current, func(event provider.Event) error {
 					if err := ctx.Err(); err != nil {
@@ -56,6 +59,11 @@ func (s *configuration) retryStream(ctx context.Context, logger *slog.Logger, se
 					return emit(event)
 				})
 				if err == nil {
+					fields := []any{"model", model.name, "duration_ms", time.Since(started).Milliseconds()}
+					if result.Usage != nil {
+						fields = append(fields, "input_tokens", result.Usage.InputTokens, "output_tokens", result.Usage.OutputTokens)
+					}
+					logger.InfoContext(ctx, fmt.Sprintf("Agent model %s completed in %s", model.name, time.Since(started).Round(time.Millisecond)), fields...)
 					return model.name, result, nil
 				}
 				logger.WarnContext(ctx, "provider conversation request failed", "model", model.name, "attempt", attempt, "error", err)

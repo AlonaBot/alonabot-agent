@@ -155,7 +155,7 @@ func (a *component) converse(c *sdk.Context, chain message.Chain) error {
 		return model, result, err
 	}
 	next, stop := iter.Pull(func(yield func(string) bool) {
-		providerError = runToolLoop(c, db, provider.Request{}, catalog, stream, func(text string) error {
+		providerError = runToolLoop(c, c.Logger(), db, provider.Request{}, catalog, stream, func(text string) error {
 			assistant.WriteString(text)
 			if !yield(text) {
 				return context.Canceled
