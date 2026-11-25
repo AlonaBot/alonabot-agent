@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"log/slog"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/AlonaBot/AlonaBot/sdk"
 	"github.com/AlonaBot/AlonaBot/sdk/errcode"
@@ -120,8 +122,28 @@ func normalizedToolName(original string) string {
 	return result
 }
 
-func (t roundTool) invoke(ctx context.Context, arguments json.RawMessage) string {
+func (t roundTool) invoke(ctx context.Context, logger *slog.Logger, arguments json.RawMessage) string {
+	started := time.Now()
+	name := t.original
+	if t.peer != nil {
+		name = t.peer.config.sanitize(name)
+	}
+	logger.InfoContext(ctx, fmt.Sprintf("Agent is calling tool %s", name), "tool", name)
+	var failure error
+	defer func() {
+		fields := []any{"tool", name, "duration_ms", time.Since(started).Milliseconds()}
+		if failure != nil {
+			detail := failure.Error()
+			if t.peer != nil {
+				detail = t.peer.config.sanitize(detail)
+			}
+			logger.WarnContext(ctx, fmt.Sprintf("Agent tool %s failed", name), append(fields, "error", detail)...)
+			return
+		}
+		logger.InfoContext(ctx, fmt.Sprintf("Agent finished tool %s in %s", name, time.Since(started).Round(time.Millisecond)), fields...)
+	}()
 	if t.blocked {
+		failure = errcode.PermissionDenied.New("tool requires an interactive actor")
 		return "error: PERMISSION_DENIED"
 	}
 	if t.local != nil {
@@ -129,13 +151,16 @@ func (t roundTool) invoke(ctx context.Context, arguments json.RawMessage) string
 	}
 	if t.peer == nil {
 		result, err := toolapi.Invoke(ctx, t.original, arguments)
+		failure = err
 		return toolResult(string(result), err)
 	}
 	// 参数原文完整展示，确认成功后再发出唯一一次 tools/call。
 	if err := toolapi.Confirm(ctx, t.original, string(arguments), t.effect); err != nil {
+		failure = err
 		return toolResult("", err)
 	}
 	if err := ctx.Err(); err != nil {
+		failure = err
 		return toolResult("", err)
 	}
 	result, err := t.session.CallTool(ctx, &mcp.CallToolParams{Name: t.mcpName, Arguments: arguments})
@@ -147,6 +172,10 @@ func (t roundTool) invoke(ctx context.Context, arguments json.RawMessage) string
 		} else {
 			content = string(encoded)
 		}
+	}
+	failure = err
+	if failure == nil && result != nil && result.IsError {
+		failure = errors.New("MCP tool returned isError")
 	}
 	// 完整 JSON 保留 content 的非文本块、structuredContent、isError；外部错误也先脱敏。
 	return t.peer.config.sanitize(toolResult(content, err))

@@ -21,3 +21,7 @@ Models configured for image input receive the actual images and their source map
 `mcp_servers` supports `stdio` and `streamable-http`. Configure command, args, and secret env for stdio; configure URL and secret headers for HTTP. Use trusted services and grant the permissions they need. An empty `skills_dir` disables skills; relative paths use the plugin working directory. Use Reload skills after editing files. `llm_service_allowed_plugins` selects plugins allowed to call text generation and defaults to `["*"]`.
 
 Management pages expose personas, memory, conversations, and usage. The public provider package is `provider/`, and the implementation is `internal/agent/`. See [development](development.md).
+
+## Runtime logs
+
+INFO records summarize model requests, completion time and usage, and tool invocation starts and completions. Request bodies, model output, tool arguments and results are omitted. Failure records retain an error classification or specific error; MCP errors retain credential redaction. Expand **Details** in Core's log page to inspect structured fields and use Trace to connect events, model requests, tools and sends.

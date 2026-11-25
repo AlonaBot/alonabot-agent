@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -19,7 +20,7 @@ var (
 	errModelUsage = errcode.Internal.New("could not record model usage")
 )
 
-func runToolLoop(ctx context.Context, db *gorm.DB, request provider.Request, catalog toolCatalog, stream conversationStream, emit func(string) error) error {
+func runToolLoop(ctx context.Context, logger *slog.Logger, db *gorm.DB, request provider.Request, catalog toolCatalog, stream conversationStream, emit func(string) error) error {
 	request.Tools = catalog.definitions
 	steps := 0
 	for {
@@ -68,7 +69,7 @@ func runToolLoop(ctx context.Context, db *gorm.DB, request provider.Request, cat
 				content = toolResult("", errcode.NotFound.New("unknown tool"))
 			} else {
 				steps++
-				content = tool.invoke(ctx, call.Arguments)
+				content = tool.invoke(ctx, logger, call.Arguments)
 			}
 			if err := ctx.Err(); err != nil {
 				return err

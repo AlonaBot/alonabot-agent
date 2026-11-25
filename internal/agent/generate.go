@@ -57,6 +57,7 @@ func (a *component) generate(c *sdk.Context, req llm.Request) (llm.Response, err
 	for _, message := range req.Messages {
 		request.Messages = append(request.Messages, provider.Message{Role: message.Role, Content: message.Text})
 	}
+	c.Logger().InfoContext(c, fmt.Sprintf("Agent is requesting model %s", selected.name), "caller_plugin_id", caller, "model", selected.name)
 	var text strings.Builder
 	started := time.Now()
 	result, err := selected.client.Stream(c, request, func(event provider.Event) error {
@@ -68,10 +69,10 @@ func (a *component) generate(c *sdk.Context, req llm.Request) (llm.Response, err
 		fields = append(fields, "input_tokens", result.Usage.InputTokens, "output_tokens", result.Usage.OutputTokens)
 	}
 	if err != nil {
-		c.Logger().DebugContext(c, "provider generation failed", append(fields, "error_kind", providerErrorKind(err))...)
+		c.Logger().WarnContext(c, fmt.Sprintf("Agent model %s failed", selected.name), append(fields, "error_kind", providerErrorKind(err))...)
 		return llm.Response{}, errcode.Unavailable.New("provider generation failed")
 	}
-	c.Logger().DebugContext(c, "provider generation completed", fields...)
+	c.Logger().InfoContext(c, fmt.Sprintf("Agent model %s completed in %s", selected.name, time.Since(started).Round(time.Millisecond)), fields...)
 
 	// 3. nil 用量保持缺失，有用量时通过指针保留零值。
 	response := llm.Response{Text: text.String(), Model: selected.name}
