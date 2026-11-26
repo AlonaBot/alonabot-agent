@@ -39,4 +39,4 @@ For documentation and GitHub metadata, check the changed links, YAML and scripts
 - `plugin.yaml`: component identity and packaging
 - `provider/`, `mcptest/`: provider protocols and MCP simulator
 
-[Core development](https://github.com/AlonaBot/AlonaBot/blob/main/docs/development.md) · [Core plugin guide](https://github.com/AlonaBot/AlonaBot/blob/main/docs/plugin-guide.md)
+[Core development](https://github.com/AlonaBot/AlonaBot/blob/main/docs/development.md) · [Component developer docs](https://alonabot.github.io/en/docs/tutorial/project)
