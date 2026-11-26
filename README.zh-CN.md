@@ -14,7 +14,7 @@ alonabot install --source AlonaBot/alonabot-agent --yes
 
 配置 Provider 与聊天模型后，发送 `/ask 你好`。
 
-通过 `alonabot-plugin-builtin-official` 提供的 `/new`（别名 `/reset`）清空当前会话，Agent 向该插件开放 `conversation.reset` 服务。
+向 Agent 发送 `/new`（别名 `/reset`）清空当前会话。
 
 管理员可使用 `agent/shell` 工具在 Core 主机的 Agent 数据目录中运行命令，获取完整 stdout、stderr 和退出码。在 WebUI 工具设置中可将策略改为 allow、confirm 或 deny。
 

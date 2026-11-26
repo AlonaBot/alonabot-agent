@@ -6,7 +6,7 @@
 
 ## 对话与模型
 
-发送 `/ask 你好` 发起对话。自由对话由当前 Profile 的 `triggers` 控制：`mention`、`wake_word`、`private`，默认空列表；`wake_words` 提供唤醒词。管理员可用 `/agent on`、`/agent off` 切换自由对话，`/provider` 查看或选择聊天模型，`/persona` 查看或选择人设，`/profile` 查看或选择配置文件。`alonabot-plugin-builtin-official` 提供 `/new`（别名 `/reset`），通过 Agent 的 `conversation.reset` 服务清空当前会话。
+发送 `/ask 你好` 发起对话，发送 `/new`（别名 `/reset`）清空当前会话。自由对话由当前 Profile 的 `triggers` 控制：`mention`、`wake_word`、`private`，默认空列表；`wake_words` 提供唤醒词。管理员可用 `/agent on`、`/agent off` 切换自由对话，`/provider` 查看或选择聊天模型，`/persona` 查看或选择人设，`/profile` 查看或选择配置文件。
 
 `history_entries` 默认为 20，`member_sessions` 默认为 false，可按成员分开群聊。`max_attempts` 默认为 3，包含首次调用；`fallback_chat_models` 指定备用聊天模型。`image_caption_model` 选择支持图片的聊天模型，留空保留图片占位；`image_caption_prompt` 指定转述提示。Profile 可覆盖的字段以 Schema 中的 `profile` 标记为准。
 

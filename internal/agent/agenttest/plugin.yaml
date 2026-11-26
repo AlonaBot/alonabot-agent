@@ -1,7 +1,0 @@
-# 会话服务集成测试的白名单调用方身份。
-id: alonabot-plugin-builtin-official
-name: Builtin service caller
-version: 0.1.0
-author: AlonaBot
-role: plugin
-source: github.com/AlonaBot/alonabot-agent

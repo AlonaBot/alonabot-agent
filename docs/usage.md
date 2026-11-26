@@ -6,7 +6,7 @@ After installation, add a provider in the WebUI model settings with a name, prot
 
 ## Conversations and models
 
-Send `/ask Hello` to start a conversation. The current Profile's `triggers` controls free conversation: `mention`, `wake_word`, and `private`; the default list is empty. `wake_words` supplies wake words. Administrators can use `/agent on` and `/agent off` to toggle free conversation, `/provider` to list or choose a chat model, `/persona` to list or choose a persona, and `/profile` to view or select a configuration profile. The `alonabot-plugin-builtin-official` plugin provides `/new` (alias `/reset`), which calls the Agent's `conversation.reset` service to clear the current conversation.
+Send `/ask Hello` to start a conversation, and `/new` (alias `/reset`) to clear the current conversation. The current Profile's `triggers` controls free conversation: `mention`, `wake_word`, and `private`; the default list is empty. `wake_words` supplies wake words. Administrators can use `/agent on` and `/agent off` to toggle free conversation, `/provider` to list or choose a chat model, `/persona` to list or choose a persona, and `/profile` to view or select a configuration profile.
 
 `history_entries` defaults to 20. `member_sessions` defaults to false and can separate group conversations by member. `max_attempts` defaults to 3, including the first request; `fallback_chat_models` lists alternate chat models. `image_caption_model` selects a chat model that accepts images; leave it empty to retain image placeholders. `image_caption_prompt` supplies caption instructions. Fields marked `profile` in the schema support Profile overrides.
 

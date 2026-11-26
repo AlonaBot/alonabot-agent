@@ -9,6 +9,7 @@
     "agent.error": "The provider request failed ({code}).",
     "agent.personas": "Personas: {names}",
     "agent.unknown_persona": "Unknown persona: {name}",
+    "agent.reset": "Conversation cleared.",
     "agent.tool_limit": "The tool call limit has been reached. This conversation turn has ended.",
     "agent.tools_error": "The tool directory request failed ({code}).",
     "agent.no_model": "Ask an administrator to configure and select a chat model.",
