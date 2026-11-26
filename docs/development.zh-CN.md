@@ -39,4 +39,4 @@ alonabot check .
 - `plugin.yaml`: 组件身份与打包声明
 - `provider/`、`mcptest/`：Provider 协议与 MCP 模拟端
 
-[Core 源码开发](https://github.com/AlonaBot/AlonaBot/blob/main/docs/development.zh-CN.md) · [Core 插件指南](https://github.com/AlonaBot/AlonaBot/blob/main/docs/plugin-guide.zh-CN.md)
+[Core 源码开发](https://github.com/AlonaBot/AlonaBot/blob/main/docs/development.zh-CN.md) · [组件开发文档](https://alonabot.github.io/docs/tutorial/project)
