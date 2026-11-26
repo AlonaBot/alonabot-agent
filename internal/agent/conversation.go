@@ -202,7 +202,7 @@ func (a *component) converse(c *sdk.Context, chain message.Chain) error {
 		imagesToSave = nil
 		user.ImagePaths = nil
 	}
-	if c.Event().ChatType == message.ChatGroup && c.Event().Actor != nil {
+	if c.ChatType() == message.ChatGroup && c.Event().Actor != nil {
 		user.Speaker = c.Event().Actor.ExternalUserID
 	}
 	assistantJSON, err := json.Marshal(conversationEntry{Role: roleAssistant, Content: assistant.String()})

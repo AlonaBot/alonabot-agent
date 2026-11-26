@@ -1,11 +1,14 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"os/exec"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -21,15 +24,17 @@ const (
 	toolNameLimit  = 64 // 六种 Provider 的共同命名范围。
 	toolNamePrefix = "_"
 	toolHashDigits = 16 // FNV-1a 64 位的十六进制宽度。
+	shellTool      = "agent/shell"
 )
 
 type roundTool struct {
-	original   string // Core 完整服务名或 mcp/<server>/<tool>，执行和确认始终使用它。
+	original   string // Core 完整服务名、agent/shell 或 mcp/<server>/<tool>，执行和确认始终使用它。
 	definition provider.Tool
 	peer       *mcpPeer
 	session    *mcp.ClientSession // 本轮目录捕获的来源，不随下一轮重建映射。
 	mcpName    string
 	effect     toolapi.Effect
+	shell      bool
 	local      func(json.RawMessage) string // 插件内工具直接执行，无 Core 策略与确认。
 	blocked    bool                         // 后台任务没有 Actor，拒绝所有需要交互确认的工具。
 }
@@ -47,6 +52,12 @@ func (a *component) listTools(c *sdk.Context, skills []skill) (toolCatalog, erro
 	tools := make([]roundTool, 0, len(core))
 	for _, tool := range core {
 		tools = append(tools, roundTool{original: tool.Name, blocked: c.User() == "" && tool.Policy == "confirm", definition: provider.Tool{Description: tool.Description, InputSchema: tool.InputSchema}})
+	}
+	if c.User() != "" && c.Has(sdk.Admin) {
+		tools = append(tools, roundTool{original: shellTool, shell: true, definition: provider.Tool{
+			Description: "Run a shell command on the Core host and return stdout, stderr, and the exit code.",
+			InputSchema: json.RawMessage(`{"type":"object","properties":{"command":{"type":"string"}},"required":["command"],"additionalProperties":false}`),
+		}})
 	}
 	for _, peer := range a.mcp {
 		session, entries, err := peer.tools(c)
@@ -124,6 +135,9 @@ func (t roundTool) invoke(ctx context.Context, arguments json.RawMessage) string
 	if t.blocked {
 		return "error: PERMISSION_DENIED"
 	}
+	if t.shell {
+		return runShell(ctx, arguments)
+	}
 	if t.local != nil {
 		return t.local(arguments)
 	}
@@ -150,6 +164,44 @@ func (t roundTool) invoke(ctx context.Context, arguments json.RawMessage) string
 	}
 	// 完整 JSON 保留 content 的非文本块、structuredContent、isError；外部错误也先脱敏。
 	return t.peer.config.sanitize(toolResult(content, err))
+}
+
+func runShell(ctx context.Context, arguments json.RawMessage) string {
+	var input struct {
+		Command *string `json:"command"`
+	}
+	if err := json.Unmarshal(arguments, &input); err != nil {
+		return toolResult("", errcode.InvalidArgument.New(err.Error()))
+	}
+	if input.Command == nil {
+		return toolResult("", errcode.InvalidArgument.New("command is required"))
+	}
+	// 1. 完整命令经 Core 策略确认后才启动进程。
+	if err := toolapi.Confirm(ctx, shellTool, *input.Command, toolapi.Destructive); err != nil {
+		return toolResult("", err)
+	}
+	command := exec.CommandContext(ctx, "sh", "-c", *input.Command)
+	if runtime.GOOS == "windows" {
+		command = exec.CommandContext(ctx, "cmd", "/C", *input.Command)
+	}
+	command.Dir = sdk.PluginDataDir(ctx)
+	var stdout, stderr bytes.Buffer
+	command.Stdout, command.Stderr = &stdout, &stderr
+	err := command.Run()
+	// 2. 非零退出码作为执行结果保留，启动失败仍返回完整错误。
+	exitCode := 0
+	var exitError *exec.ExitError
+	if errors.As(err, &exitError) {
+		exitCode = exitError.ExitCode()
+	} else if err != nil {
+		return toolResult("", err)
+	}
+	result, err := json.Marshal(struct {
+		Stdout   string `json:"stdout"`
+		Stderr   string `json:"stderr"`
+		ExitCode int    `json:"exit_code"`
+	}{stdout.String(), stderr.String(), exitCode})
+	return toolResult(string(result), err)
 }
 
 func toolResult(content string, err error) string {

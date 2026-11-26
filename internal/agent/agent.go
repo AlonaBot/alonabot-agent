@@ -96,6 +96,7 @@ func Register(p *sdk.Plugin) {
 	})
 	p.OnStop(a.closeMCP)
 	a.registerCommands(p)
+	a.registerReset(p)
 	a.registerConversation(p)
 	p.Route(http.MethodPost, "/models/discover").HandleFunc(a.discoverModels)
 	p.Route(http.MethodPost, "/models/test").HandleFunc(a.testModel)

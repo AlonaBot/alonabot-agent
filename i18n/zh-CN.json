@@ -9,7 +9,6 @@
     "agent.error": "Provider 请求失败（{code}）。",
     "agent.personas": "人格：{names}",
     "agent.unknown_persona": "找不到人格：{name}",
-    "agent.reset": "已清除会话历史。",
     "agent.tool_limit": "已达到本轮工具调用上限，本轮对话已结束。",
     "agent.tools_error": "工具目录请求失败（{code}）。",
     "agent.no_model": "请管理员配置并选择对话模型。",
@@ -78,9 +77,6 @@
     },
     "provider": {
       "description": "列出模型或为当前配置文件选择对话模型"
-    },
-    "reset": {
-      "description": "清除本聊天的会话历史"
     },
     "profile": {
       "description": "查看或切换配置文件"
