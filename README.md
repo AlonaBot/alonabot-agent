@@ -14,6 +14,10 @@ alonabot install --source AlonaBot/alonabot-agent --yes
 
 Configure a provider and chat model, then send `/ask Hello`.
 
+Send `/new` (alias `/reset`) to the Agent to clear the current conversation.
+
+Administrators can use the `agent/shell` tool to run commands on the Core host in the Agent's data directory and receive complete stdout, stderr, and the exit code. Set its policy to allow, confirm, or deny in the WebUI tool settings.
+
 ## Documentation
 
 - [Usage and configuration](docs/usage.md)

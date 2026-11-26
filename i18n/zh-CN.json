@@ -64,6 +64,9 @@
     "agent.input_error": "读取消息内容失败：{error}"
   },
   "commands": {
+    "new": {
+      "description": "清空当前会话"
+    },
     "ask": {
       "description": "向 Agent 提问"
     },
@@ -78,9 +81,6 @@
     },
     "provider": {
       "description": "列出模型或为当前配置文件选择对话模型"
-    },
-    "reset": {
-      "description": "清除本聊天的会话历史"
     },
     "profile": {
       "description": "查看或切换配置文件"

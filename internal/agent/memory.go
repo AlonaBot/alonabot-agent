@@ -54,7 +54,7 @@ func sessionKey(c *sdk.Context) string { return c.Session() + "@" + c.Instance()
 // conversationKey 只为启用成员会话的群消息追加完整用户身份；笔记仍使用聊天键。
 func conversationKey(c *sdk.Context) string {
 	key := sessionKey(c)
-	if c.Config().Bool("member_sessions") && c.Event().ChatType == message.ChatGroup && c.User() != "" {
+	if c.Config().Bool("member_sessions") && c.ChatType() == message.ChatGroup && c.User() != "" {
 		return key + "@" + c.User()
 	}
 	return key
