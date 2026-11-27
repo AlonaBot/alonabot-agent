@@ -5,12 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"iter"
 	"slices"
-	"strings"
 
 	"github.com/AlonaBot/AlonaBot/sdk"
+	"github.com/AlonaBot/AlonaBot/sdk/button"
 	conversationapi "github.com/AlonaBot/AlonaBot/sdk/conversation"
 	"github.com/AlonaBot/AlonaBot/sdk/errcode"
 	"github.com/AlonaBot/AlonaBot/sdk/gormdb"
@@ -35,6 +33,9 @@ type conversationEntry struct {
 }
 
 func (a *component) registerConversation(p *sdk.Plugin) {
+	button.On(p, agentChoice).Permission(sdk.User).Continue().Handle(func(c *sdk.Context, label string) error {
+		return a.converse(c, message.Chain{message.Text(label)})
+	})
 	p.Command("ask").Args("text").Permission(sdk.User).Description("Ask the agent").Menu().Handle(func(c *sdk.Context, chain message.Chain) error {
 		c.StopPropagation()
 		return c.Continue(func(c *sdk.Context) error { return a.converse(c, chain) })
@@ -140,11 +141,13 @@ func (a *component) converse(c *sdk.Context, chain message.Chain) error {
 		c.Logger().ErrorContext(c, "tool directory failed", "error", err)
 		return c.Reply(c.T("agent.tools_error", "code", errcode.Unavailable.String()))
 	}
+	round, err := newMessageRound(c, currentTaskTarget(c), false, input.attachments)
+	if err != nil {
+		return err
+	}
+	round.addTools(&catalog)
 
-	// 2. Pull 将 Provider 的推送回调转为 Stream 的拉取回调；stop 交还控制权并关闭响应体。
-	var assistant strings.Builder
-	var providerError error
-	var toolLimitReached bool
+	// 2. 段边界交给外层 Stream，完成前段投递后才继续工具循环。
 	var usedCaption bool
 	retry := a.config.retryStream(c, c.Logger(), selected, prepare)
 	stream := func(request provider.Request, emit func(provider.Event) error) (string, provider.Result, error) {
@@ -154,48 +157,12 @@ func (a *component) converse(c *sdk.Context, chain message.Chain) error {
 		}
 		return model, result, err
 	}
-	next, stop := iter.Pull(func(yield func(string) bool) {
-		providerError = runToolLoop(c, db, provider.Request{}, catalog, stream, func(text string) error {
-			assistant.WriteString(text)
-			if !yield(text) {
-				return context.Canceled
-			}
-			return nil
-		})
-		if errors.Is(providerError, errToolLimit) {
-			// 工具预算耗尽仍正常收尾，以发送无编辑能力实例的缓冲文本。
-			toolLimitReached, providerError = true, nil
-		}
+	providerError := round.streamConversation(func(emit func(conversationDelta) error) error {
+		return runToolLoop(c, db, provider.Request{}, catalog, stream, emit)
 	})
-	defer stop()
-	_, err = c.Stream(func(context.Context) (string, error) {
-		if text, ok := next(); ok {
-			return text, nil
-		}
-		if providerError != nil {
-			// Provider 错误链可能含 io.EOF；SDK 只用独立信号判断流是否结束。
-			return "", errcode.Unavailable.New("provider conversation failed")
-		}
-		return "", io.EOF
-	})
-	if err != nil {
-		if c.Err() != nil {
-			return c.Err()
-		}
-		if providerError == nil {
-			return err
-		}
-		if errors.Is(providerError, errModelUsage) {
-			return providerError
-		}
-		c.Logger().ErrorContext(c, "provider conversation failed", "error", providerError)
-		return c.Reply(c.T("agent.error", "code", errcode.Unavailable.String()))
-	}
-	if toolLimitReached {
-		return c.Reply(c.T("agent.tool_limit"))
-	}
+	toolLimitReached := errors.Is(providerError, errToolLimit)
 
-	// 3. 生成和显示成功后，仅将仍属于当前 reset 代次的轮次原子追加。
+	// 3. 已投递条目按原序追加；reset 代次保护旧轮次，后续错误也保留发送事实。
 	user := conversationEntry{Role: roleUser, Content: plainText, ImagePaths: input.imagePaths}
 	if usedCaption {
 		user.Content = *captioned
@@ -205,13 +172,28 @@ func (a *component) converse(c *sdk.Context, chain message.Chain) error {
 	if c.ChatType() == message.ChatGroup && c.Event().Actor != nil {
 		user.Speaker = c.Event().Actor.ExternalUserID
 	}
-	assistantJSON, err := json.Marshal(conversationEntry{Role: roleAssistant, Content: assistant.String()})
-	if err != nil {
-		return fmt.Errorf("encode assistant conversation entry: %w", err)
+	if len(round.history) > 0 {
+		lock.Lock()
+		err = a.appendImages(c, db, settings.ResetGeneration, user, round.history, imagesToSave)
+		lock.Unlock()
+		if err != nil {
+			return errors.Join(providerError, err)
+		}
 	}
-	lock.Lock()
-	defer lock.Unlock()
-	return a.appendImages(c, db, settings.ResetGeneration, user, assistantJSON, imagesToSave)
+	if toolLimitReached {
+		return c.Reply(c.T("agent.tool_limit"))
+	}
+	if providerError != nil {
+		if c.Err() != nil {
+			return c.Err()
+		}
+		if errors.Is(providerError, errModelUsage) {
+			return providerError
+		}
+		c.Logger().ErrorContext(c, "provider conversation failed", "error", providerError)
+		return errors.Join(providerError, c.Reply(c.T("agent.error", "code", errcode.Unavailable.String())))
+	}
+	return nil
 }
 
 // recentConversation 独立保留冻结快照，count 仅限制普通历史条数。

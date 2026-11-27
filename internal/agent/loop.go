@@ -19,7 +19,13 @@ var (
 	errModelUsage = errcode.Internal.New("could not record model usage")
 )
 
-func runToolLoop(ctx context.Context, db *gorm.DB, request provider.Request, catalog toolCatalog, stream conversationStream, emit func(string) error) error {
+// conversationDelta 将正文与发送边界交给外层；flush 返回后才执行工具。
+type conversationDelta struct {
+	text  string
+	flush bool
+}
+
+func runToolLoop(ctx context.Context, db *gorm.DB, request provider.Request, catalog toolCatalog, stream conversationStream, emit func(conversationDelta) error) error {
 	request.Tools = catalog.definitions
 	steps := 0
 	for {
@@ -31,7 +37,7 @@ func runToolLoop(ctx context.Context, db *gorm.DB, request provider.Request, cat
 		model, result, err := stream(request, func(event provider.Event) error {
 			if event.Text != "" {
 				text.WriteString(event.Text)
-				if err := emit(event.Text); err != nil {
+				if err := emit(conversationDelta{text: event.Text}); err != nil {
 					return err
 				}
 			}
@@ -68,6 +74,9 @@ func runToolLoop(ctx context.Context, db *gorm.DB, request provider.Request, cat
 				content = toolResult("", errcode.NotFound.New("unknown tool"))
 			} else {
 				steps++
+				if err := emit(conversationDelta{flush: call.Name == sendMessageToolName}); err != nil {
+					return err
+				}
 				content = tool.invoke(ctx, call.Arguments)
 			}
 			if err := ctx.Err(); err != nil {

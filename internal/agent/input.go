@@ -11,15 +11,16 @@ import (
 )
 
 type conversationInput struct {
-	text       strings.Builder
-	images     []provider.Image
-	imagePaths []string
-	hasNodes   bool
+	text        strings.Builder
+	images      []provider.Image
+	imagePaths  []string
+	hasNodes    bool
+	attachments map[string]message.MediaSource
 }
 
 // readConversationInput 按同一消息链展开节点和媒体，命令调用传入已去掉命令前缀的参数链。
 func readConversationInput(c *sdk.Context, chain message.Chain) (*conversationInput, error) {
-	input := &conversationInput{}
+	input := &conversationInput{attachments: make(map[string]message.MediaSource)}
 	if err := input.readChain(c, chain, "message", false); err != nil {
 		return nil, err
 	}
@@ -38,6 +39,7 @@ func (input *conversationInput) readChain(c *sdk.Context, chain message.Chain, p
 		case message.MarkdownSegment:
 			input.text.WriteString(value.Content)
 		case message.ImageSegment:
+			input.attachments[at] = value.Source
 			image, err := readImage(c, value.Source)
 			if err != nil {
 				// 平台与 Core 的媒体令牌只用于授权，错误进入日志与回复前去掉令牌。
@@ -49,9 +51,7 @@ func (input *conversationInput) readChain(c *sdk.Context, chain message.Chain, p
 			}
 			input.images = append(input.images, image)
 			input.imagePaths = append(input.imagePaths, at)
-			if nested {
-				fmt.Fprintf(&input.text, "\n[image: %s]\n", at)
-			}
+			fmt.Fprintf(&input.text, "\n[image: %s]\n", at)
 		case message.ForwardSegment:
 			input.hasNodes = true
 			items := value.Items
@@ -92,10 +92,13 @@ func (input *conversationInput) readChain(c *sdk.Context, chain message.Chain, p
 				fmt.Fprintf(&input.text, "\n[/node %s]\n", nodePath)
 			}
 		case message.FileSegment:
+			input.attachments[at] = value.Source
 			fmt.Fprintf(&input.text, "\n[file %s name=%q mime=%q] %s\n", at, value.Filename, value.MIME, value.Caption)
 		case message.VideoSegment:
+			input.attachments[at] = value.Source
 			fmt.Fprintf(&input.text, "\n[video %s] %s\n", at, value.Caption)
 		case message.VoiceSegment:
+			input.attachments[at] = value.Source
 			fmt.Fprintf(&input.text, "\n[voice %s] %s\n", at, value.Caption)
 		case message.MentionSegment:
 			if nested {

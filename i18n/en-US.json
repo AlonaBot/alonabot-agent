@@ -4,6 +4,7 @@
     "description": "Official conversational agent"
   },
   "messages": {
+    "agent.send_message.confirm": "Send message to {target} via {instance}",
     "agent.skills.header": "Available skills (use load_skill to read a skill):",
     "agent.memory_error": "Memory could not be read ({code}).",
     "agent.error": "The provider request failed ({code}).",

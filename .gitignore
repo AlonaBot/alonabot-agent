@@ -2,6 +2,7 @@
 /dist/
 /node_modules/
 /data/
+/tmp/
 *_local_test.go
 *.local.test.ts
 *.local.test.tsx

@@ -1,7 +1,9 @@
 package agent
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"unicode/utf8"
@@ -59,40 +61,81 @@ func (a *component) runScheduled(c *sdk.Context, session string, task scheduledP
 	if err != nil {
 		return err
 	}
-	// 2. 工具循环和发送继承 Core 的 job scope、期限与发信许可。
-	var assistant strings.Builder
-	stream := a.config.retryStream(c, c.Logger(), selected, nil)
-	if err := runToolLoop(c, db, request, catalog, stream, func(text string) error { assistant.WriteString(text); return nil }); err != nil {
-		return err
-	}
-	chunks, err := splitTaskText(assistant.String(), task.Target.TextLimit, task.Target.TextUnit)
+	round, err := newMessageRound(c, task.Target, true, nil)
 	if err != nil {
 		return err
 	}
-	for _, chunk := range chunks {
-		if _, err := sdk.Send(c, task.Target.session(), message.Text(chunk), sdk.Via(task.Target.Instance)); err != nil {
+	round.addTools(&catalog)
+	// 2. 工具循环和发送继承 Core 的 job scope、期限与发信许可。
+	var assistant strings.Builder
+	flush := func() error {
+		if assistant.Len() == 0 {
+			return nil
+		}
+		var limit uint64
+		var unit message.TextUnit
+		if declared := round.textLimit(); declared != nil {
+			limit, unit = declared.Max, declared.Unit
+		}
+		chunks, err := splitTaskText(assistant.String(), limit, unit)
+		if err != nil {
 			return err
 		}
+		for _, chunk := range chunks {
+			result, err := sdk.Send(c, task.Target.session(), message.Text(chunk), sdk.Via(task.Target.Instance))
+			if result != nil {
+				content := chunk
+				if err != nil || result.Status != message.SendAccepted {
+					content = "[body delivery incomplete]\n" + chunk + "\n" + messageJSON(sendReceipt(result, err))
+				}
+				round.history = append(round.history, conversationEntry{Role: roleAssistant, Content: content})
+			}
+			if err != nil {
+				return err
+			}
+		}
+		assistant.Reset()
+		return nil
+	}
+	stream := a.config.retryStream(c, c.Logger(), selected, nil)
+	runError := runToolLoop(c, db, request, catalog, stream, func(delta conversationDelta) error {
+		if delta.flush {
+			return flush()
+		}
+		assistant.WriteString(delta.text)
+		return nil
+	})
+	if runError == nil || errors.Is(runError, errToolLimit) {
+		runError = errors.Join(runError, flush())
+	}
+	if len(round.history) == 0 {
+		return runError
 	}
 	userJSON, err := json.Marshal(conversationEntry{Role: roleUser, Content: task.Prompt})
 	if err != nil {
 		return err
 	}
-	assistantJSON, err := json.Marshal(conversationEntry{Role: roleAssistant, Content: assistant.String()})
-	if err != nil {
-		return err
+	entries := []json.RawMessage{userJSON}
+	for _, entry := range round.history {
+		encoded, err := json.Marshal(entry)
+		if err != nil {
+			return errors.Join(runError, err)
+		}
+		entries = append(entries, encoded)
 	}
 	// 正文与目录登记共用会话锁，避免页面把尚未完成的登记当作空会话清走。
 	lock := a.sessionLock(session)
 	lock.Lock()
 	defer lock.Unlock()
-	if _, err := conversation.Append(c, session, userJSON, assistantJSON); err != nil {
-		return err
+	// 与交互入口一样，取消后的已发送事实仍写入历史。
+	ctx := context.WithoutCancel(c)
+	if _, err := conversation.Append(ctx, session, entries...); err != nil {
+		return errors.Join(runError, err)
 	}
-	return db.WithContext(c).Save(&conversationRecord{Key: session}).Error
+	return errors.Join(runError, db.WithContext(ctx).Save(&conversationRecord{Key: session}).Error)
 }
 
-// splitTaskText 沿用 Context.Stream 的计量方式，按创建时快照在码点边界分段。
+// splitTaskText 沿用 Context.Stream 的计量方式，按当前出站描述在码点边界分段。
 func splitTaskText(text string, limit uint64, unit message.TextUnit) ([]string, error) {
 	if limit == 0 {
 		return []string{text}, nil
