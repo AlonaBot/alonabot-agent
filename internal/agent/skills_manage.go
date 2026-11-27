@@ -6,7 +6,9 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -132,11 +134,29 @@ func writeManagedSkill(managedDir, name, description, body string, allowOverwrit
 	if err := os.MkdirAll(targetDir, 0o755); err != nil {
 		return err
 	}
-	tmpPath := filepath.Join(targetDir, skillFileName+".tmp")
-	if err := os.WriteFile(tmpPath, content, 0o644); err != nil {
+	tmpFile, err := os.CreateTemp(targetDir, ".SKILL.md.*.tmp")
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmpPath, filepath.Join(targetDir, skillFileName))
+	tmpPath := tmpFile.Name()
+	cleanupTmp := true
+	defer func() {
+		if cleanupTmp {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+	if _, err := tmpFile.Write(content); err != nil {
+		_ = tmpFile.Close()
+		return err
+	}
+	if err := tmpFile.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath, filepath.Join(targetDir, skillFileName)); err != nil {
+		return err
+	}
+	cleanupTmp = false
+	return nil
 }
 
 func deleteManagedSkill(managedDir, name string) error {
@@ -293,6 +313,40 @@ func readTarGzEntries(raw []byte) ([]archiveEntry, error) {
 	return entries, nil
 }
 
+// replaceSkillDirectory 将暂存目录发布到目标目录；覆盖已有目录时先移至备份目录，
+// 新目录就位后再清理备份，发布失败时尝试将备份目录恢复原位。
+func replaceSkillDirectory(stageDir, targetDir, managedDir, skillName string, overwrite bool, rename func(oldpath, newpath string) error) error {
+	_, statErr := os.Stat(targetDir)
+	exists := statErr == nil
+	if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
+		return statErr
+	}
+	if exists && !overwrite {
+		return errcode.AlreadyExists.New("skill already exists: " + skillName)
+	}
+	if !exists {
+		return rename(stageDir, targetDir)
+	}
+	var suffix [8]byte
+	if _, err := rand.Read(suffix[:]); err != nil {
+		return err
+	}
+	backupDir := filepath.Join(managedDir, ".skill-backup-"+skillName+"-"+hex.EncodeToString(suffix[:]))
+	if err := rename(targetDir, backupDir); err != nil {
+		return fmt.Errorf("backup existing skill directory: %w", err)
+	}
+	if err := rename(stageDir, targetDir); err != nil {
+		if restoreErr := rename(backupDir, targetDir); restoreErr != nil {
+			return errors.Join(fmt.Errorf("publish skill directory: %w", err), fmt.Errorf("restore skill backup: %w", restoreErr))
+		}
+		return fmt.Errorf("publish skill directory: %w", err)
+	}
+	if err := os.RemoveAll(backupDir); err != nil {
+		return fmt.Errorf("remove skill backup: %w", err)
+	}
+	return nil
+}
+
 // installSkillArchive 校验并安全解压技能压缩包（.zip / .tar.gz / .tgz）至托管技能目录。
 func installSkillArchive(managedDir, filename string, raw []byte, overwrite bool) (skill, error) {
 	if managedDir == "" {
@@ -361,7 +415,7 @@ func installSkillArchive(managedDir, filename string, raw []byte, overwrite bool
 		return skill{}, errcode.InvalidArgument.New("invalid SKILL.md: " + err.Error())
 	}
 
-	// 3. 先落盘到同目录临时目录，校验通过后再原子替换目标目录。
+	// 3. 先落盘到同目录临时目录；覆盖已有目录时先移至备份目录，新目录就位后再清理备份，失败时恢复原目录。
 	if err := os.MkdirAll(managedDir, 0o755); err != nil {
 		return skill{}, err
 	}
@@ -388,12 +442,13 @@ func installSkillArchive(managedDir, filename string, raw []byte, overwrite bool
 			return skill{}, err
 		}
 	}
-	if overwrite {
-		if err := os.RemoveAll(targetDir); err != nil {
-			return skill{}, err
+	if err := replaceSkillDirectory(stageDir, targetDir, managedDir, parsed.name, overwrite, os.Rename); err != nil {
+		// 若仅在删除备份时出错，新目录已经就位，返回部分成功结果与原始错误。
+		if _, statErr := os.Stat(stageDir); errors.Is(statErr, os.ErrNotExist) {
+			cleanupStage = false
+			parsed.managed = true
+			return parsed, err
 		}
-	}
-	if err := os.Rename(stageDir, targetDir); err != nil {
 		return skill{}, err
 	}
 	cleanupStage = false
@@ -401,7 +456,7 @@ func installSkillArchive(managedDir, filename string, raw []byte, overwrite bool
 	return parsed, nil
 }
 
-type pageSkillItem struct {
+type pageSkill struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Body        string `json:"body"`
@@ -410,18 +465,18 @@ type pageSkillItem struct {
 
 func (a *component) skillsPageResponse() any {
 	skills, problems := a.skillSnapshot()
-	listed := make([]pageSkillItem, 0, len(skills))
-	for _, item := range skills {
-		listed = append(listed, pageSkillItem{
-			Name:        item.name,
-			Description: item.description,
-			Body:        item.body,
-			Managed:     item.managed,
+	listed := make([]pageSkill, 0, len(skills))
+	for _, entry := range skills {
+		listed = append(listed, pageSkill{
+			Name:        entry.name,
+			Description: entry.description,
+			Body:        entry.body,
+			Managed:     entry.managed,
 		})
 	}
 	return struct {
-		Skills   []pageSkillItem `json:"skills"`
-		Problems []skillProblem  `json:"problems"`
+		Skills   []pageSkill    `json:"skills"`
+		Problems []skillProblem `json:"problems"`
 	}{listed, problems}
 }
 
@@ -455,11 +510,15 @@ func (a *component) skillSnapshotFor(ctx context.Context) ([]skill, []skillProbl
 }
 
 func (a *component) pageSkillsManage(r *http.Request) (any, int, error) {
+	if r.Method == http.MethodGet {
+		a.ensureManagedSkillsDir(r.Context())
+		return a.skillsPageResponse(), http.StatusOK, nil
+	}
+	// 串行化托管技能的写入、覆盖、删除与内存重读，避免并发争用临时文件或快照倒退。
+	a.skillsManageMu.Lock()
+	defer a.skillsManageMu.Unlock()
 	managedDir := a.ensureManagedSkillsDir(r.Context())
 	switch r.Method {
-	case http.MethodGet:
-		return a.skillsPageResponse(), http.StatusOK, nil
-
 	case http.MethodPost, http.MethodPut:
 		var input struct {
 			Name        string `json:"name"`
@@ -512,7 +571,6 @@ func (a *component) pageSkillsManage(r *http.Request) (any, int, error) {
 }
 
 func (a *component) pageSkillsUpload(r *http.Request) (any, int, error) {
-	managedDir := a.ensureManagedSkillsDir(r.Context())
 	var input struct {
 		Filename   string `json:"filename"`
 		DataBase64 string `json:"data_base64"`
@@ -528,9 +586,15 @@ func (a *component) pageSkillsUpload(r *http.Request) (any, int, error) {
 	if err != nil {
 		return nil, 0, errcode.InvalidArgument.New("invalid base64 archive data")
 	}
-	if _, err := installSkillArchive(managedDir, input.Filename, raw, input.Overwrite); err != nil {
+	a.skillsManageMu.Lock()
+	defer a.skillsManageMu.Unlock()
+	managedDir := a.ensureManagedSkillsDir(r.Context())
+	installed, err := installSkillArchive(managedDir, input.Filename, raw, input.Overwrite)
+	if installed.name != "" {
+		a.reloadSkills()
+	}
+	if err != nil {
 		return nil, 0, err
 	}
-	a.reloadSkills()
 	return a.skillsPageResponse(), http.StatusCreated, nil
 }

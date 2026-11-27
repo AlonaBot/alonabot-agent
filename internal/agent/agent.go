@@ -61,8 +61,10 @@ type configuration struct {
 type component struct {
 	config              configuration
 	sessionLocks        [sessionLockCount]sync.Mutex
+	mcpManageMu         sync.Mutex // 串行化页面 MCP 增删改，保证持久化与内存发布一致。
 	mcpMu               sync.RWMutex
 	mcp                 []*mcpPeer // 当前插件 Session 拥有，支持静态配置与页面热增删。
+	skillsManageMu      sync.Mutex // 串行化托管技能编辑、上传覆盖、删除与重读。
 	managedSkillsDir    string     // 随插件数据目录持久化的托管技能目录（激活后首次访问时惰性绑定）。
 	managedSkillsLoaded bool
 	skills              []skill // skillsMu 保护；轮次捕获后保持不变。

@@ -57,6 +57,7 @@
       const error = new Error(response.data?.description || response.body || `HTTP ${response.status}`);
       error.code = response.data?.code;
       error.references = response.data?.references;
+      error.cleanupError = response.data?.cleanup_error;
       throw error;
     }
     return response.data;
@@ -108,6 +109,13 @@
           dialog.close();
           await load();
         } catch (failure) {
+          if (failure?.cleanupError) {
+            dialog.close();
+            await load();
+            const pageErrorEl = document.querySelector('#page-error');
+            if (pageErrorEl) errorAt(pageErrorEl, failure);
+            return;
+          }
           errorAt(error, failure);
         } finally {
           submit.disabled = false;

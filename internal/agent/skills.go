@@ -57,7 +57,7 @@ func readSkills(directory string) ([]skill, []skillProblem) {
 	}
 	names := make(map[string]bool)
 	for _, entry := range entries {
-		if !entry.IsDir() {
+		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".skill-upload-") || strings.HasPrefix(entry.Name(), ".skill-backup-") {
 			continue
 		}
 		path := filepath.Join(directory, entry.Name(), skillFileName)

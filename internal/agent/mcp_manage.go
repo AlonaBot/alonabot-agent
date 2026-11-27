@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -27,15 +26,23 @@ type managedMCPServer struct {
 func (managedMCPServer) TableName() string { return "managed_mcp_server" }
 
 type mcpServerInput struct {
-	Name      string       `json:"name"`
-	Transport string       `json:"transport"`
-	Command   string       `json:"command,omitempty"`
-	Args      []string     `json:"args,omitempty"`
-	URL       string       `json:"url,omitempty"`
-	Env       []secretPair `json:"env,omitempty"`
-	Headers   []secretPair `json:"headers,omitempty"`
-	KeepEnv   []string     `json:"keep_env,omitempty"`
-	KeepHdrs  []string     `json:"keep_headers,omitempty"`
+	Name        string       `json:"name"`
+	Transport   string       `json:"transport"`
+	Command     string       `json:"command,omitempty"`
+	Args        []string     `json:"args,omitempty"`
+	URL         string       `json:"url,omitempty"`
+	Env         []secretPair `json:"env,omitempty"`
+	Headers     []secretPair `json:"headers,omitempty"`
+	KeepEnv     []string     `json:"keep_env,omitempty"`
+	KeepHeaders []string     `json:"keep_headers,omitempty"`
+}
+
+// pageMCPPartialFailure 在配置变更已持久化并生效、但旧连接回收失败时同时返回变更结果与回收错误。
+type pageMCPPartialFailure struct {
+	Description  string         `json:"description"`
+	Removed      string         `json:"removed,omitempty"`
+	Server       *pageMCPServer `json:"server,omitempty"`
+	CleanupError string         `json:"cleanup_error"`
 }
 
 // validateMCPServer 校验单个 MCP 服务器配置，静态配置与页面托管配置共用同一规则。
@@ -138,14 +145,14 @@ func buildServerFromInput(input mcpServerInput, previous *mcpServer) (mcpServer,
 		server.Args = append(server.Args, arg)
 	}
 	// 1. 编辑时若未提交某秘密键的新值但保留在 keep 列表中，则沿用旧值。
-	prevEnv := map[string]string{}
-	prevHdrs := map[string]string{}
+	previousEnv := map[string]string{}
+	previousHeaders := map[string]string{}
 	if previous != nil {
 		for _, pair := range previous.Env {
-			prevEnv[pair.Name] = pair.Value
+			previousEnv[pair.Name] = pair.Value
 		}
 		for _, pair := range previous.Headers {
-			prevHdrs[pair.Name] = pair.Value
+			previousHeaders[pair.Name] = pair.Value
 		}
 	}
 	seenEnv := map[string]bool{}
@@ -159,25 +166,25 @@ func buildServerFromInput(input mcpServerInput, previous *mcpServer) (mcpServer,
 	}
 	for _, key := range input.KeepEnv {
 		if !seenEnv[key] {
-			if value, ok := prevEnv[key]; ok {
+			if value, ok := previousEnv[key]; ok {
 				seenEnv[key] = true
 				server.Env = append(server.Env, secretPair{Name: key, Value: value})
 			}
 		}
 	}
-	seenHdrs := map[string]bool{}
+	seenHeaders := map[string]bool{}
 	for _, pair := range input.Headers {
 		key := strings.TrimSpace(pair.Name)
 		if key == "" {
 			continue
 		}
-		seenHdrs[key] = true
+		seenHeaders[key] = true
 		server.Headers = append(server.Headers, secretPair{Name: key, Value: pair.Value})
 	}
-	for _, key := range input.KeepHdrs {
-		if !seenHdrs[key] {
-			if value, ok := prevHdrs[key]; ok {
-				seenHdrs[key] = true
+	for _, key := range input.KeepHeaders {
+		if !seenHeaders[key] {
+			if value, ok := previousHeaders[key]; ok {
+				seenHeaders[key] = true
 				server.Headers = append(server.Headers, secretPair{Name: key, Value: value})
 			}
 		}
@@ -205,14 +212,19 @@ func (a *component) pageMCPManage(r *http.Request) (any, int, error) {
 		if name == "" {
 			return nil, 0, errcode.InvalidArgument.New("name is required")
 		}
+		// 1. 串行化查询、删库与内存摘除，避免与并发编辑/删除交错导致状态分离。
+		a.mcpManageMu.Lock()
 		peer := a.findMCPPeer(name)
 		if peer == nil {
+			a.mcpManageMu.Unlock()
 			return nil, 0, errcode.NotFound.New("unknown MCP server")
 		}
 		if !peer.managed {
+			a.mcpManageMu.Unlock()
 			return nil, 0, errcode.InvalidArgument.New("static config MCP server cannot be deleted here")
 		}
 		if err := db.Delete(&managedMCPServer{Name: name}).Error; err != nil {
+			a.mcpManageMu.Unlock()
 			return nil, 0, err
 		}
 		a.mcpMu.Lock()
@@ -223,10 +235,19 @@ func (a *component) pageMCPManage(r *http.Request) (any, int, error) {
 			}
 		}
 		a.mcpMu.Unlock()
+		a.mcpManageMu.Unlock()
+
+		// 2. 回收已摘除的旧连接；回收失败时连同已完成的删除结果与错误一起返回。
 		closeCtx, cancel := context.WithTimeout(context.Background(), mcpCloseTimeout)
 		defer cancel()
 		if closeErr := peer.close(closeCtx); closeErr != nil {
-			slog.WarnContext(r.Context(), "close removed MCP server failed", "server", peer.config.sanitize(name), "error", peer.config.sanitize(closeErr.Error()))
+			sanitizedErr := peer.config.sanitize(closeErr.Error())
+			slog.WarnContext(r.Context(), "close removed MCP server failed", "server", peer.config.sanitize(name), "error", sanitizedErr)
+			return pageMCPPartialFailure{
+				Description:  "MCP server configuration was removed, but closing the previous connection failed: " + sanitizedErr,
+				Removed:      name,
+				CleanupError: sanitizedErr,
+			}, http.StatusInternalServerError, nil
 		}
 		return struct{}{}, http.StatusOK, nil
 
@@ -243,14 +264,17 @@ func (a *component) pageMCPManage(r *http.Request) (any, int, error) {
 		if len(inputs) == 0 {
 			inputs = []mcpServerInput{raw.mcpServerInput}
 		}
+		a.mcpManageMu.Lock()
 		parsed := make([]mcpServer, 0, len(inputs))
 		batchNames := make(map[string]bool, len(inputs))
 		for _, item := range inputs {
 			server, err := buildServerFromInput(item, nil)
 			if err != nil {
+				a.mcpManageMu.Unlock()
 				return nil, 0, err
 			}
 			if batchNames[server.Name] || a.findMCPPeer(server.Name) != nil {
+				a.mcpManageMu.Unlock()
 				return nil, 0, errcode.AlreadyExists.New("duplicate MCP server name: " + server.Name)
 			}
 			batchNames[server.Name] = true
@@ -268,6 +292,7 @@ func (a *component) pageMCPManage(r *http.Request) (any, int, error) {
 			}
 			return nil
 		}); err != nil {
+			a.mcpManageMu.Unlock()
 			return nil, 0, err
 		}
 		a.mcpMu.Lock()
@@ -277,6 +302,7 @@ func (a *component) pageMCPManage(r *http.Request) (any, int, error) {
 			a.mcp = append(a.mcp, peer)
 		}
 		a.mcpMu.Unlock()
+		a.mcpManageMu.Unlock()
 		res, err := a.pageMCP(r, "")
 		return res, http.StatusCreated, err
 
@@ -285,22 +311,29 @@ func (a *component) pageMCPManage(r *http.Request) (any, int, error) {
 		if err := decodePageRequest(r, &input); err != nil {
 			return nil, 0, err
 		}
+		// 1. 串行化读取旧配置、校验、落盘与内存替换，保证持久化与运行配置一致。
+		a.mcpManageMu.Lock()
 		existing := a.findMCPPeer(strings.TrimSpace(input.Name))
 		if existing == nil {
+			a.mcpManageMu.Unlock()
 			return nil, 0, errcode.NotFound.New("unknown MCP server")
 		}
 		if !existing.managed {
+			a.mcpManageMu.Unlock()
 			return nil, 0, errcode.InvalidArgument.New("static config MCP server cannot be edited here")
 		}
 		server, err := buildServerFromInput(input, &existing.config)
 		if err != nil {
+			a.mcpManageMu.Unlock()
 			return nil, 0, err
 		}
 		encoded, err := json.Marshal(server)
 		if err != nil {
+			a.mcpManageMu.Unlock()
 			return nil, 0, err
 		}
 		if err := db.Save(&managedMCPServer{Name: server.Name, ConfigJSON: string(encoded)}).Error; err != nil {
+			a.mcpManageMu.Unlock()
 			return nil, 0, err
 		}
 		replacement := newMCPPeer(server)
@@ -313,13 +346,25 @@ func (a *component) pageMCPManage(r *http.Request) (any, int, error) {
 			}
 		}
 		a.mcpMu.Unlock()
+		a.mcpManageMu.Unlock()
+
+		// 2. 回收被替换的旧连接；回收失败时同时返回已生效的新配置状态与回收错误。
+		status, err := replacement.pageStatus(r)
+		if err != nil {
+			return nil, 0, err
+		}
 		closeCtx, cancel := context.WithTimeout(context.Background(), mcpCloseTimeout)
 		defer cancel()
-		if closeErr := existing.close(closeCtx); closeErr != nil && !errors.Is(closeErr, context.Canceled) {
-			slog.WarnContext(r.Context(), "close replaced MCP server failed", "server", existing.config.sanitize(server.Name), "error", existing.config.sanitize(closeErr.Error()))
+		if closeErr := existing.close(closeCtx); closeErr != nil {
+			sanitizedErr := existing.config.sanitize(closeErr.Error())
+			slog.WarnContext(r.Context(), "close replaced MCP server failed", "server", existing.config.sanitize(server.Name), "error", sanitizedErr)
+			return pageMCPPartialFailure{
+				Description:  "MCP server configuration was updated, but closing the previous connection failed: " + sanitizedErr,
+				Server:       &status,
+				CleanupError: sanitizedErr,
+			}, http.StatusInternalServerError, nil
 		}
-		status, err := replacement.pageStatus(r)
-		return status, http.StatusOK, err
+		return status, http.StatusOK, nil
 	}
 	return nil, 0, errcode.InvalidArgument.New("unsupported method")
 }
