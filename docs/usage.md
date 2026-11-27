@@ -26,6 +26,8 @@ Discover extensions by purpose with `get_message_format({"query":"music"})` and 
 
 Before `send_message`, the preceding body segment finishes delivery; subsequent body text starts a new segment. Scheduled body text uses the limits queried at runtime. History records delivered body text and readable rich summaries in order. Rich summaries contain formats, captions, button labels, and receipts. Receipts preserve each physical delivery's segment indexes, references, errors, and status; only `rejected` and `not_attempted` carry `resend_safe`. Instructions tell the model to report unknown delivery without resending, and to avoid repeating already sent content in the body.
 
+Rich-message sends preserve the original `parts` indexes. If a `BeforeSend` hook changes the message chain, Core rejects the send with `FAILED_PRECONDITION` before platform delivery; the tool result and rich history retain the rejected receipt and error. Body streaming keeps its existing hook behavior.
+
 Link buttons open their URL. Choice buttons submit the visible label as a new turn under the clicking user's current permissions and normal tool confirmation. Clicking an old choice after `/new` still submits ordinary text.
 
 `agent/shell` is available to administrators in interactive conversations. It runs shell commands on the Core host in the Agent's data directory using `sh -c` on Unix or `cmd /C` on Windows, returning complete stdout, stderr, and the exit code as JSON. It follows the call's cancellation and deadline. The WebUI tool settings let administrators choose allow, confirm, or deny.

@@ -26,6 +26,8 @@ Agent 用固定的 `send_message` 发送富消息，用 `get_message_format` 查
 
 `send_message` 会先结束并投递前一段正文，再发送富消息，后续正文另起一段。定时正文按运行时查询到的文本限额分块。历史依次保存已投递的正文和富消息文字摘要，富消息摘要仅含格式、说明、按钮标签和回执。回执保留物理投递的片段下标、句柄、错误与状态；只有 `rejected`、`not_attempted` 标记 `resend_safe`。结果为 `unknown` 时提示模型说明结果未知并停止补发。已发内容提示模型避免在正文复述。
 
+富消息发送保留原始 `parts` 下标。`BeforeSend` Hook 改变消息链时，Core 在平台投递前以 `FAILED_PRECONDITION` 拒绝发送；工具结果和 rich 历史保留 rejected 回执及错误。正文流沿用原有 Hook 行为。
+
 链接按钮直接打开 URL；选项按钮把可见标签作为点击者的新一轮输入，使用点击者当前的权限与正常工具确认。`/new` 后点击旧选项仍按普通文字处理。
 
 `agent/shell` 向交互会话中的管理员开放，在 Core 主机的 Agent 数据目录中执行 shell 命令：Unix 使用 `sh -c`，Windows 使用 `cmd /C`，以 JSON 返回完整 stdout、stderr 和退出码，并随调用上下文取消或到期。在 WebUI 工具设置中可选择 allow、confirm 或 deny 策略。

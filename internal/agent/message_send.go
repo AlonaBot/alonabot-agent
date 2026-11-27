@@ -134,9 +134,9 @@ func (r *messageRound) sendMessage(arguments json.RawMessage) string {
 	}
 	var result *message.SendResult
 	if r.scheduled {
-		result, err = sdk.Send(r.context, r.target.session(), chain, sdk.Via(r.target.Instance))
+		result, err = sdk.Send(r.context, r.target.session(), chain, sdk.Via(r.target.Instance), sdk.RequireOriginalSegmentIndexes())
 	} else {
-		result, err = r.context.Send(chain)
+		result, err = r.context.Send(chain, sdk.RequireOriginalSegmentIndexes())
 	}
 	receipt := sendReceipt(result, err)
 	r.history = append(r.history, conversationEntry{Role: roleAssistant, Kind: "rich", Content: summary + "\n" + messageJSON(receipt)})

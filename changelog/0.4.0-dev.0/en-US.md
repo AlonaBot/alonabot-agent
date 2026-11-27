@@ -8,4 +8,5 @@
 ### Changed
 
 - Interactive and scheduled conversations deliver body segments around rich messages and retain ordered text summaries and complete delivery receipts in history.
-- Scheduled body splitting uses the target's current outbound description. This feature requires the Core SDK outbound description, message check, and required confirmation APIs.
+- Rich-message sends reject `BeforeSend` chain changes before platform delivery, preserving receipt indexes for the original `parts` and retaining the rejected result and error in history.
+- Scheduled body splitting uses the target's current outbound description. This feature requires the Core SDK outbound description, message check, required confirmation, and original segment index APIs.
