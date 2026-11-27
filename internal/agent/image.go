@@ -115,12 +115,14 @@ func replayImages(entry conversationEntry, images map[uint64]conversationImage, 
 }
 
 // appendImages 在会话锁内执行；Core 追加后本地事务失败时，文字历史仍保留。
-func (a *component) appendImages(c *sdk.Context, db *gorm.DB, generation uint64, user conversationEntry, assistant json.RawMessage, images []provider.Image) error {
+func (a *component) appendImages(c *sdk.Context, db *gorm.DB, generation uint64, user conversationEntry, assistants []conversationEntry, images []provider.Image) error {
 	session := conversationKey(c)
+	// 已投递的内容在请求取消后仍需保留；会话追加仅要求插件 Session 身份。
+	ctx := context.WithoutCancel(c)
 	var appended bool
-	err := db.WithContext(c).Transaction(func(tx *gorm.DB) error {
+	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// 1. 以最终设置核对 reset 代次，并从最新计数分配连续编号。
-		settings, err := a.settings(c, session, tx)
+		settings, err := a.settings(ctx, session, tx)
 		if err != nil {
 			return err
 		}
@@ -136,14 +138,22 @@ func (a *component) appendImages(c *sdk.Context, db *gorm.DB, generation uint64,
 			return fmt.Errorf("encode user conversation entry: %w", err)
 		}
 		// 2. 先取得 Core 序号；后续本地失败保留已追加的文字历史。
-		last, err := conversationapi.Append(c, session, encoded, assistant)
+		entries := []json.RawMessage{encoded}
+		for _, assistant := range assistants {
+			entry, err := json.Marshal(assistant)
+			if err != nil {
+				return fmt.Errorf("encode assistant conversation entry: %w", err)
+			}
+			entries = append(entries, entry)
+		}
+		last, err := conversationapi.Append(ctx, session, entries...)
 		if err != nil {
 			return err
 		}
 		appended = true
 		// 3. 图片、计数和越界清理一起提交，失败时一起回滚。
 		for i, image := range images {
-			row := conversationImage{Session: session, Number: user.Images[i], Seq: last - 1, MIME: image.MediaType, Bytes: image.Data}
+			row := conversationImage{Session: session, Number: user.Images[i], Seq: last - uint64(len(assistants)), MIME: image.MediaType, Bytes: image.Data}
 			if err := tx.Create(&row).Error; err != nil {
 				return err
 			}
@@ -161,7 +171,7 @@ func (a *component) appendImages(c *sdk.Context, db *gorm.DB, generation uint64,
 	}
 	if appended {
 		// 管理员可能在生成期间清空正文和目录；仍持有会话锁时恢复目录。
-		if directoryError := db.WithContext(c).Save(&conversationRecord{Key: session}).Error; directoryError != nil {
+		if directoryError := db.WithContext(ctx).Save(&conversationRecord{Key: session}).Error; directoryError != nil {
 			err = errors.Join(err, fmt.Errorf("register conversation: %w", directoryError))
 		}
 	}

@@ -17,8 +17,6 @@ import (
 
 const minimumTaskInterval = 60 * time.Second
 
-const taskSummaryBytes = 1024 // core.tool.confirm 的 UTF-8 字节上限。
-
 var agentTask = taskapi.Define[scheduledPrompt]("agent")
 
 type taskCreator struct {
@@ -152,11 +150,11 @@ func scheduleTask(c *sdk.Context, arguments json.RawMessage) string {
 
 func taskSummary(prompt, trigger string) string {
 	summary := trigger + "\nprompt: " + prompt
-	if len(summary) <= taskSummaryBytes {
+	if len(summary) <= toolSummaryBytes {
 		return summary
 	}
 	const omitted = "…"
-	end := taskSummaryBytes - len(omitted)
+	end := toolSummaryBytes - len(omitted)
 	for !utf8.RuneStart(summary[end]) {
 		end--
 	}

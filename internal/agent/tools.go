@@ -21,10 +21,11 @@ import (
 )
 
 const (
-	toolNameLimit  = 64 // 六种 Provider 的共同命名范围。
-	toolNamePrefix = "_"
-	toolHashDigits = 16 // FNV-1a 64 位的十六进制宽度。
-	shellTool      = "agent/shell"
+	toolNameLimit    = 64 // 六种 Provider 的共同命名范围。
+	toolNamePrefix   = "_"
+	toolHashDigits   = 16   // FNV-1a 64 位的十六进制宽度。
+	toolSummaryBytes = 1024 // core.tool.confirm 的 UTF-8 字节上限。
+	shellTool        = "agent/shell"
 )
 
 type roundTool struct {
@@ -35,7 +36,7 @@ type roundTool struct {
 	mcpName    string
 	effect     toolapi.Effect
 	shell      bool
-	local      func(json.RawMessage) string // 插件内工具直接执行，无 Core 策略与确认。
+	local      func(json.RawMessage) string // 插件内工具自行执行权限与确认。
 	blocked    bool                         // 后台任务没有 Actor，拒绝所有需要交互确认的工具。
 }
 
