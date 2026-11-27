@@ -87,7 +87,7 @@ func (r *messageRound) sendMessage(arguments json.RawMessage) string {
 	if err != nil {
 		return toolResult("", err)
 	}
-	confirmation := fmt.Sprintf("Send message to %s via %s", r.target.session(), r.target.Instance)
+	confirmation := r.context.T("agent.send_message.confirm", "target", r.target.session(), "instance", r.target.Instance)
 	for _, path := range paths {
 		confirmation += "\n" + path
 	}

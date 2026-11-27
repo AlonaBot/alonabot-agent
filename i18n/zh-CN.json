@@ -4,6 +4,7 @@
     "description": "官方对话 Agent"
   },
   "messages": {
+    "agent.send_message.confirm": "通过实例 {instance} 向 {target} 发送消息",
     "agent.skills.header": "可用技能（使用 load_skill 读取技能）：",
     "agent.memory_error": "记忆读取失败（{code}）。",
     "agent.error": "Provider 请求失败（{code}）。",
