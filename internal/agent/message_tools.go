@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -57,38 +58,47 @@ func (r *messageRound) addTools(catalog *toolCatalog) {
 
 func (r *messageRound) sendDescription() string {
 	var out strings.Builder
-	out.WriteString("Send one logical rich message to the current target. For plain text, write directly in the response body; do not call this tool or wrap plain replies in text parts. text/markdown parts are only for arranging text alongside other formats. Do not repeat content already sent by send_message in the response body. If unsure about combinations, call get_message_format first. Resend only parts explicitly marked resend_safe; when status is unknown, stop resending and tell the user the delivery result is unknown. No automatic send retry occurs. Standard format status for this target:")
+	out.WriteString("Send one logical rich message to the current target. For plain text, write directly in the response body; do not call this tool or wrap plain replies in text parts. text/markdown parts are only for arranging text alongside other formats. Do not repeat content already sent by send_message in the response body. If unsure about combinations, call get_message_format with type and combine_with first. Resend only parts explicitly marked resend_safe; when status is unknown, stop resending and tell the user the delivery result is unknown. No automatic send retry occurs. Standard format status for this target:")
 	for _, format := range r.description.Formats {
-		fmt.Fprintf(&out, " %s=%s;", format.Name, format.Status)
+		fmt.Fprintf(&out, " %s=%s", format.Name, format.Status)
+		if isMediaFormat(format.Name) {
+			sources, unknown := r.messageSources(format)
+			if unknown {
+				fmt.Fprintf(&out, " sources=unknown (may try %s)", strings.Join(sources, ","))
+			} else {
+				fmt.Fprintf(&out, " sources=[%s]", strings.Join(sources, ","))
+			}
+		}
+		out.WriteByte(';')
 	}
-	out.WriteString(" Request recursive forward fields, combination details and platform extension formats through get_message_format. Sources use exactly one of https_url, media_ref, attachment (this round's labeled path)")
-	if !r.scheduled && r.context.Has(sdk.Admin) && r.context.User() != "" {
-		out.WriteString(", local_path (absolute path, requires confirmation before reading)")
-	}
-	out.WriteString(". The tool returns all physical delivery statuses and confirmed message_refs.")
+	out.WriteString(" Request recursive forward fields, combination details and platform extension formats through get_message_format. Choose exactly one source listed for the format. attachment uses a labeled path present in this round. local_path uploads as media_ref, requires an interactive Core Admin and confirmation of the absolute path before reading; unknown media_ref support remains an attempt. The tool returns all physical delivery statuses and confirmed message_refs.")
 	return out.String()
 }
 
 func (r *messageRound) sendSchema() json.RawMessage {
-	// 仅列常见字段，递归与扩展的完整 Schema 由详情工具按需给出。
-	sources := map[string]any{}
-	for _, name := range []string{"https_url", "media_ref", "attachment"} {
-		sources[name] = map[string]any{"type": "string", "minLength": 1}
-	}
-	if !r.scheduled && r.context.Has(sdk.Admin) && r.context.User() != "" {
-		sources["local_path"] = map[string]any{"type": "string", "minLength": 1}
-	}
-	var alternatives []any
-	for _, name := range []string{"https_url", "media_ref", "attachment", "local_path"} {
-		if _, exists := sources[name]; exists {
-			alternatives = append(alternatives, map[string]any{"required": []string{name}})
+	// 按格式收窄本轮来源；仅列常见字段，递归与扩展的完整 Schema 按需查询。
+	var sources []string
+	var mediaRules []any
+	for _, format := range r.description.Formats {
+		if !isMediaFormat(format.Name) {
+			continue
 		}
+		available, _ := r.messageSources(format)
+		for _, name := range available {
+			if !slices.Contains(sources, name) {
+				sources = append(sources, name)
+			}
+		}
+		mediaRules = append(mediaRules, map[string]any{
+			"if":   map[string]any{"properties": map[string]any{"type": map[string]any{"const": format.Name}}, "required": []string{"type"}},
+			"then": map[string]any{"properties": map[string]any{"source": r.messageSourceSchema(available)}, "required": []string{"source"}},
+		})
 	}
 	properties := map[string]any{
 		"type": map[string]any{"type": "string", "description": "Standard: text, markdown, image, video, voice, file, mention, quote, forward, buttons; or a declared format discovered with get_message_format."},
 		"text": map[string]any{"type": "string"}, "entities": map[string]any{"type": "array", "items": map[string]any{"type": "object"}, "description": "UTF-16 entities; get text format for complete fields."},
 		"content": map[string]any{"type": "string"},
-		"source":  map[string]any{"type": "object", "properties": sources, "oneOf": alternatives, "additionalProperties": false},
+		"source":  r.messageSourceSchema(sources),
 		"caption": map[string]any{"type": "string"}, "filename": map[string]any{"type": "string"}, "mime": map[string]any{"type": "string"},
 		"user_id": map[string]any{"type": "string"}, "display": map[string]any{"type": "string"}, "message_ref": map[string]any{"type": "string"},
 		"rows":    map[string]any{"type": "array", "items": map[string]any{"type": "array", "items": map[string]any{"type": "object", "properties": map[string]any{"label": map[string]any{"type": "string"}, "url": map[string]any{"type": "string"}}, "required": []string{"label"}, "additionalProperties": false}}},
@@ -106,8 +116,58 @@ func (r *messageRound) sendSchema() json.RawMessage {
 			properties["entities"] = schema.Properties["entities"]
 		}
 	}
-	encoded, _ := json.Marshal(map[string]any{"type": "object", "properties": map[string]any{"parts": map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "object", "properties": properties, "required": []string{"type"}, "additionalProperties": false}}}, "required": []string{"parts"}, "additionalProperties": false})
+	encoded, _ := json.Marshal(map[string]any{"type": "object", "properties": map[string]any{"parts": map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "object", "properties": properties, "required": []string{"type"}, "additionalProperties": false, "allOf": mediaRules}}}, "required": []string{"parts"}, "additionalProperties": false})
 	return encoded
+}
+
+func isMediaFormat(name string) bool {
+	return name == "image" || name == "video" || name == "voice" || name == "file"
+}
+
+// messageSources 将目标声明与本轮权限、附件相交；缺声明时保留可尝试来源并标记未知。
+func (r *messageRound) messageSources(format message.MessageFormat) ([]string, bool) {
+	unknown := isMediaFormat(format.Name) && len(format.Sources) == 0
+	available := map[string]bool{}
+	for _, name := range format.Sources {
+		if name == "incoming" {
+			name = "attachment"
+		}
+		available[name] = true
+	}
+	if unknown {
+		for _, name := range []string{"https_url", "media_ref", "attachment"} {
+			available[name] = true
+		}
+	}
+	available["attachment"] = available["attachment"] && !r.scheduled && len(r.attachments) > 0
+	available["local_path"] = isMediaFormat(format.Name) && available["media_ref"] && !r.scheduled && r.context.User() != "" && r.context.Has(sdk.Admin)
+	sources := []string{}
+	if format.Status == message.SupportUnsupported {
+		return sources, false
+	}
+	for _, name := range []string{"https_url", "media_ref", "attachment", "local_path"} {
+		if available[name] {
+			sources = append(sources, name)
+		}
+	}
+	return sources, unknown
+}
+
+func (r *messageRound) messageSourceSchema(sources []string) map[string]any {
+	properties := map[string]any{}
+	for _, name := range sources {
+		field := map[string]any{"type": "string", "minLength": 1}
+		if name == "attachment" {
+			paths := make([]string, 0, len(r.attachments))
+			for path := range r.attachments {
+				paths = append(paths, path)
+			}
+			sort.Strings(paths)
+			field["enum"] = paths
+		}
+		properties[name] = field
+	}
+	return map[string]any{"type": "object", "properties": properties, "minProperties": 1, "maxProperties": 1, "additionalProperties": false}
 }
 
 func decodeMessageArguments(raw json.RawMessage, value any) error {
@@ -219,18 +279,7 @@ func (r *messageRound) getMessageFormat(arguments json.RawMessage) string {
 }
 
 func (r *messageRound) agentFormat(format message.MessageFormat, extension bool) map[string]any {
-	sources := []string{}
-	for _, name := range format.Sources {
-		switch name {
-		case "incoming":
-			sources = append(sources, "attachment")
-		case "media_ref", "https_url":
-			sources = append(sources, name)
-		}
-	}
-	if !r.scheduled && r.context.Has(sdk.Admin) && r.context.User() != "" && (format.Name == "image" || format.Name == "video" || format.Name == "voice" || format.Name == "file") {
-		sources = append(sources, "local_path")
-	}
+	sources, unknown := r.messageSources(format)
 	if extension && len(format.ExampleJSON) > 0 {
 		format.ExampleJSON, _ = json.Marshal(map[string]any{"parts": []any{map[string]any{"type": format.Name, "version": format.Version, "payload": format.ExampleJSON}}})
 	}
@@ -241,7 +290,10 @@ func (r *messageRound) agentFormat(format message.MessageFormat, extension bool)
 	if len(format.ExampleJSON) > 0 {
 		view["example_json"] = format.ExampleJSON
 	}
-	if len(sources) > 0 {
+	if isMediaFormat(format.Name) {
+		view["sources_known"] = !unknown
+		view["sources"] = sources
+	} else if len(sources) > 0 {
 		view["sources"] = sources
 	}
 	if format.AdapterID != "" {
