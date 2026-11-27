@@ -46,7 +46,8 @@ func (a *component) registerPages(p *sdk.Plugin) {
 	p.Route(http.MethodGet, "/pages/assets/").Public(sdk.AuthStatic).Handle(http.StripPrefix("/pages/assets/", http.FileServerFS(assets)))
 	for _, route := range []struct{ method, path string }{
 		{"GET", "personas"}, {"POST", "personas"}, {"PUT", "personas"}, {"DELETE", "personas"},
-		{"GET", "mcp"}, {"POST", "mcp/reconnect"}, {"GET", "skills"}, {"POST", "skills/reload"},
+		{"GET", "mcp"}, {"POST", "mcp"}, {"PUT", "mcp"}, {"DELETE", "mcp"}, {"POST", "mcp/reconnect"},
+		{"GET", "skills"}, {"POST", "skills"}, {"PUT", "skills"}, {"DELETE", "skills"}, {"POST", "skills/upload"}, {"POST", "skills/reload"},
 		{"GET", "memory"}, {"PATCH", "memory"}, {"DELETE", "memory"},
 		{"GET", "conversation"}, {"GET", "tasks"}, {"DELETE", "tasks"},
 	} {
@@ -81,7 +82,7 @@ func pageError(w http.ResponseWriter, r *http.Request, err error) {
 	case errcode.NotFound:
 		status, description = http.StatusNotFound, "The requested record does not exist."
 	case errcode.AlreadyExists:
-		status, description = http.StatusConflict, "A persona with this name already exists."
+		status, description = http.StatusConflict, err.Error()
 	case errcode.ResourceExhausted:
 		status, description = http.StatusBadRequest, "Memory exceeds the Unicode code point limit."
 	}
@@ -113,7 +114,7 @@ func (a *component) pageData(w http.ResponseWriter, r *http.Request) {
 	case "personas":
 		result, status, err = a.pagePersonas(r)
 	case "mcp":
-		result, err = a.pageMCP(r, "")
+		result, status, err = a.pageMCPManage(r)
 	case "mcp/reconnect":
 		var input struct {
 			Name string `json:"name"`
@@ -126,24 +127,19 @@ func (a *component) pageData(w http.ResponseWriter, r *http.Request) {
 				result, err = a.pageMCP(r, input.Name)
 			}
 		}
-	case "skills", "skills/reload":
-		if r.Method == http.MethodPost {
-			if r.ContentLength != 0 {
-				if err = decodePageRequest(r, &struct{}{}); err != nil {
-					break
-				}
+	case "skills":
+		result, status, err = a.pageSkillsManage(r)
+	case "skills/upload":
+		result, status, err = a.pageSkillsUpload(r)
+	case "skills/reload":
+		if r.ContentLength != 0 {
+			if err = decodePageRequest(r, &struct{}{}); err != nil {
+				break
 			}
-			a.reloadSkills()
 		}
-		skills, problems := a.skillSnapshot()
-		listed := []map[string]string{}
-		for _, skill := range skills {
-			listed = append(listed, map[string]string{"name": skill.name, "description": skill.description})
-		}
-		result = struct {
-			Skills   []map[string]string `json:"skills"`
-			Problems []skillProblem      `json:"problems"`
-		}{listed, problems}
+		a.ensureManagedSkillsDir(r.Context())
+		a.reloadSkills()
+		result = a.skillsPageResponse()
 	case "memory":
 		result, err = a.pageMemory(r)
 	case "conversation":
@@ -250,11 +246,17 @@ type pageMCPTool struct {
 	Effect      toolapi.Effect `json:"effect"`
 }
 type pageMCPServer struct {
-	Name      string        `json:"name"`
-	Transport string        `json:"transport"`
-	Status    string        `json:"status"`
-	Tools     []pageMCPTool `json:"tools"`
-	Error     string        `json:"error,omitempty"`
+	Name        string        `json:"name"`
+	Transport   string        `json:"transport"`
+	Status      string        `json:"status"`
+	Tools       []pageMCPTool `json:"tools"`
+	Error       string        `json:"error,omitempty"`
+	Managed     bool          `json:"managed"`
+	Command     string        `json:"command,omitempty"`
+	Args        []string      `json:"args,omitempty"`
+	URL         string        `json:"url,omitempty"`
+	EnvNames    []string      `json:"env_names,omitempty"`
+	HeaderNames []string      `json:"header_names,omitempty"`
 }
 
 func (p *mcpPeer) pageStatus(r *http.Request) (pageMCPServer, error) {
@@ -264,7 +266,22 @@ func (p *mcpPeer) pageStatus(r *http.Request) (pageMCPServer, error) {
 		return pageMCPServer{}, r.Context().Err()
 	}
 	defer func() { <-p.gate }()
-	result := pageMCPServer{Name: p.config.Name, Transport: p.config.Transport, Status: "disconnected", Tools: []pageMCPTool{}}
+	result := pageMCPServer{
+		Name:      p.config.Name,
+		Transport: p.config.Transport,
+		Status:    "disconnected",
+		Tools:     []pageMCPTool{},
+		Managed:   p.managed,
+		Command:   p.config.Command,
+		Args:      append([]string(nil), p.config.Args...),
+		URL:       p.config.URL,
+	}
+	for _, pair := range p.config.Env {
+		result.EnvNames = append(result.EnvNames, pair.Name)
+	}
+	for _, pair := range p.config.Headers {
+		result.HeaderNames = append(result.HeaderNames, pair.Name)
+	}
 	if p.session != nil {
 		result.Status = "connected"
 		// gate 内只接收当前会话的结束通知，保留最近成功的工具目录。
@@ -291,7 +308,7 @@ func (p *mcpPeer) pageStatus(r *http.Request) (pageMCPServer, error) {
 
 func (a *component) pageMCP(r *http.Request, name string) (any, error) {
 	servers := []pageMCPServer{}
-	for _, peer := range a.mcp {
+	for _, peer := range a.mcpSnapshot() {
 		if name != "" && peer.config.Name != name {
 			continue
 		}

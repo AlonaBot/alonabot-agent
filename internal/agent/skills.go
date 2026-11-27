@@ -30,6 +30,7 @@ const (
 
 type skill struct {
 	name, description, body string
+	managed                 bool
 }
 
 type skillProblem struct {
@@ -250,7 +251,10 @@ func (a *component) skillSnapshot() ([]skill, []skillProblem) {
 }
 
 func (a *component) reloadSkills() {
-	skills, problems := readSkills(a.config.skillsDir)
+	a.skillsMu.RLock()
+	managedDir := a.managedSkillsDir
+	a.skillsMu.RUnlock()
+	skills, problems := readAllSkills(a.config.skillsDir, managedDir)
 	a.skillsMu.Lock()
 	a.skills, a.skillProblems = skills, problems
 	a.skillsMu.Unlock()
