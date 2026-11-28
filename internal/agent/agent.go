@@ -59,13 +59,18 @@ type configuration struct {
 }
 
 type component struct {
-	config        configuration
-	sessionLocks  [sessionLockCount]sync.Mutex
-	mcp           []*mcpPeer // 当前插件 Session 拥有，连接在首次对话时建立。
-	skills        []skill    // skillsMu 保护；轮次捕获后保持不变。
-	skillsMu      sync.RWMutex
-	skillProblems []skillProblem
-	basePersona   string
+	config              configuration
+	sessionLocks        [sessionLockCount]sync.Mutex
+	mcpManageMu         sync.Mutex // 串行化页面 MCP 增删改，保证持久化与内存发布一致。
+	mcpMu               sync.RWMutex
+	mcp                 []*mcpPeer // 当前插件 Session 拥有，支持静态配置与页面热增删。
+	skillsManageMu      sync.Mutex // 串行化托管技能编辑、上传覆盖、删除与重读。
+	managedSkillsDir    string     // 随插件数据目录持久化的托管技能目录（激活后首次访问时惰性绑定）。
+	managedSkillsLoaded bool
+	skills              []skill // skillsMu 保护；轮次捕获后保持不变。
+	skillsMu            sync.RWMutex
+	skillProblems       []skillProblem
+	basePersona         string
 }
 
 // Register 登记组件的业务路由、存储和生命周期。
@@ -76,6 +81,8 @@ func Register(p *sdk.Plugin) {
 		return tx.WithContext(ctx).AutoMigrate(&chatSettings{}, &conversationImage{}, &modelUsage{}, &persona{}, &conversationRecord{})
 	}}, {ID: 2, Up: func(ctx context.Context, tx *gorm.DB) error {
 		return tx.WithContext(ctx).AutoMigrate(&memoryRecord{})
+	}}, {ID: 3, Up: func(ctx context.Context, tx *gorm.DB) error {
+		return tx.WithContext(ctx).AutoMigrate(&managedMCPServer{})
 	}}})
 	p.OnStart(func(ctx context.Context) error {
 		var err error
@@ -87,9 +94,15 @@ func Register(p *sdk.Plugin) {
 					return fmt.Errorf("default_persona: %w", err)
 				}
 			}
-			a.skills, a.skillProblems = readSkills(a.config.skillsDir)
+			a.skills, a.skillProblems = readAllSkills(a.config.skillsDir, "")
+			a.mcpMu.Lock()
+			a.mcp = nil
 			for _, server := range a.config.mcpServers {
 				a.mcp = append(a.mcp, newMCPPeer(server))
+			}
+			a.mcpMu.Unlock()
+			if err := a.loadManagedMCP(ctx); err != nil {
+				return fmt.Errorf("load managed MCP servers: %w", err)
 			}
 		}
 		return err

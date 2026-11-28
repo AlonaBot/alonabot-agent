@@ -30,6 +30,7 @@ const (
 
 type skill struct {
 	name, description, body string
+	managed                 bool
 }
 
 type skillProblem struct {
@@ -56,7 +57,7 @@ func readSkills(directory string) ([]skill, []skillProblem) {
 	}
 	names := make(map[string]bool)
 	for _, entry := range entries {
-		if !entry.IsDir() {
+		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".skill-upload-") || strings.HasPrefix(entry.Name(), ".skill-backup-") {
 			continue
 		}
 		path := filepath.Join(directory, entry.Name(), skillFileName)
@@ -250,7 +251,10 @@ func (a *component) skillSnapshot() ([]skill, []skillProblem) {
 }
 
 func (a *component) reloadSkills() {
-	skills, problems := readSkills(a.config.skillsDir)
+	a.skillsMu.RLock()
+	managedDir := a.managedSkillsDir
+	a.skillsMu.RUnlock()
+	skills, problems := readAllSkills(a.config.skillsDir, managedDir)
 	a.skillsMu.Lock()
 	a.skills, a.skillProblems = skills, problems
 	a.skillsMu.Unlock()

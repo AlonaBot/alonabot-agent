@@ -47,7 +47,7 @@ func (a *component) runScheduled(c *sdk.Context, session string, task scheduledP
 		return err
 	}
 	request.Messages = append(request.Messages, provider.Message{Role: roleSystem, Content: prompt})
-	skills, _ := a.skillSnapshot()
+	skills, _ := a.skillSnapshotFor(c)
 	if len(skills) > 0 {
 		request.Messages = append(request.Messages, provider.Message{Role: roleSystem, Content: skillPrompt(skills, c.T("agent.skills.header"))})
 	}

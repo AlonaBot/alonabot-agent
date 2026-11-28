@@ -94,7 +94,7 @@ func (a *component) converse(c *sdk.Context, chain message.Chain) error {
 		return err
 	}
 	prefix = append(prefix, provider.Message{Role: roleSystem, Content: prompt})
-	skills, _ := a.skillSnapshot()
+	skills, _ := a.skillSnapshotFor(c)
 	if len(skills) > 0 {
 		prefix = append(prefix, provider.Message{Role: roleSystem, Content: skillPrompt(skills, c.T("agent.skills.header"))})
 	}

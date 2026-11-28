@@ -108,6 +108,7 @@ func validHeaderName(name string) bool {
 // stdio 通过 SDK 的 IOTransport 编解码，进程等待由此处负责，以使用实际停止预算。
 type mcpPeer struct {
 	config     mcpServer
+	managed    bool // true 表示由页面托管（可编辑、删除），false 表示来自静态插件配置。
 	gate       chan struct{}
 	stopped    bool               // gate 保护；停止回收后永久禁止建立连接。
 	session    *mcp.ClientSession // gate 保护；会话可并发 CallTool。
@@ -292,9 +293,10 @@ func (p *mcpPeer) closeLocked(ctx context.Context) error {
 }
 
 func (a *component) closeMCP(ctx context.Context) error {
+	peers := a.mcpSnapshot()
 	var wg sync.WaitGroup
-	errs := make([]error, len(a.mcp))
-	for i, p := range a.mcp {
+	errs := make([]error, len(peers))
+	for i, p := range peers {
 		wg.Go(func() {
 			if err := p.close(ctx); err != nil {
 				errs[i] = fmt.Errorf("close MCP server: %w", &mcpCloseError{cause: err, safe: p.config.sanitize(err.Error())})

@@ -59,7 +59,7 @@ func (a *component) listTools(c *sdk.Context, skills []skill) (toolCatalog, erro
 			InputSchema: json.RawMessage(`{"type":"object","properties":{"command":{"type":"string"}},"required":["command"],"additionalProperties":false}`),
 		}})
 	}
-	for _, peer := range a.mcp {
+	for _, peer := range a.mcpSnapshot() {
 		session, entries, err := peer.tools(c)
 		var additions []roundTool
 		if err == nil {
