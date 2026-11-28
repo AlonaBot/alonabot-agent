@@ -139,9 +139,9 @@ func writeManagedSkill(managedDir, name, description, body string, allowOverwrit
 		return err
 	}
 	tmpPath := tmpFile.Name()
-	cleanupTmp := true
+	cleanupTemporary := true
 	defer func() {
-		if cleanupTmp {
+		if cleanupTemporary {
 			_ = os.Remove(tmpPath)
 		}
 	}()
@@ -155,7 +155,7 @@ func writeManagedSkill(managedDir, name, description, body string, allowOverwrit
 	if err := os.Rename(tmpPath, filepath.Join(targetDir, skillFileName)); err != nil {
 		return err
 	}
-	cleanupTmp = false
+	cleanupTemporary = false
 	return nil
 }
 
@@ -188,8 +188,8 @@ func deleteManagedSkill(managedDir, name string) error {
 }
 
 type archiveEntry struct {
-	relPath string
-	data    []byte
+	relativePath string
+	data         []byte
 }
 
 func cleanArchiveRelPath(raw string) (string, bool) {
@@ -258,7 +258,7 @@ func readZipEntries(raw []byte) ([]archiveEntry, error) {
 		if totalBytes > skillArchiveMaxTotalBytes {
 			return nil, errcode.InvalidArgument.New("archive uncompressed size exceeds limit")
 		}
-		entries = append(entries, archiveEntry{relPath: rel, data: data})
+		entries = append(entries, archiveEntry{relativePath: rel, data: data})
 	}
 	return entries, nil
 }
@@ -308,7 +308,7 @@ func readTarGzEntries(raw []byte) ([]archiveEntry, error) {
 		if totalBytes > skillArchiveMaxTotalBytes {
 			return nil, errcode.InvalidArgument.New("archive uncompressed size exceeds limit")
 		}
-		entries = append(entries, archiveEntry{relPath: rel, data: data})
+		entries = append(entries, archiveEntry{relativePath: rel, data: data})
 	}
 	return entries, nil
 }
@@ -377,11 +377,11 @@ func installSkillArchive(managedDir, filename string, raw []byte, overwrite bool
 	hasRootSkill := false
 	topDirs := map[string]bool{}
 	for _, entry := range entries {
-		if entry.relPath == skillFileName {
+		if entry.relativePath == skillFileName {
 			hasRootSkill = true
 		}
-		if idx := strings.IndexByte(entry.relPath, '/'); idx > 0 {
-			topDirs[entry.relPath[:idx]] = true
+		if idx := strings.IndexByte(entry.relativePath, '/'); idx > 0 {
+			topDirs[entry.relativePath[:idx]] = true
 		} else {
 			topDirs[""] = true
 		}
@@ -392,14 +392,14 @@ func installSkillArchive(managedDir, filename string, raw []byte, overwrite bool
 			prefix = key + "/"
 		}
 		for i := range entries {
-			entries[i].relPath = strings.TrimPrefix(entries[i].relPath, prefix)
+			entries[i].relativePath = strings.TrimPrefix(entries[i].relativePath, prefix)
 		}
 	}
 
 	// 2. 定位并校验 SKILL.md，提取规范技能名称。
 	var skillData []byte
 	for _, entry := range entries {
-		if entry.relPath == skillFileName {
+		if entry.relativePath == skillFileName {
 			skillData = entry.data
 			break
 		}
@@ -434,7 +434,7 @@ func installSkillArchive(managedDir, filename string, raw []byte, overwrite bool
 		}
 	}()
 	for _, entry := range entries {
-		dest := filepath.Join(stageDir, filepath.FromSlash(entry.relPath))
+		dest := filepath.Join(stageDir, filepath.FromSlash(entry.relativePath))
 		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 			return skill{}, err
 		}

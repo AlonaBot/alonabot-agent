@@ -39,10 +39,9 @@ type mcpServerInput struct {
 
 // pageMCPPartialFailure 在配置变更已持久化并生效、但旧连接回收失败时同时返回变更结果与回收错误。
 type pageMCPPartialFailure struct {
-	Description  string         `json:"description"`
-	Removed      string         `json:"removed,omitempty"`
-	Server       *pageMCPServer `json:"server,omitempty"`
-	CleanupError string         `json:"cleanup_error"`
+	Description  string `json:"description"`
+	Removed      string `json:"removed,omitempty"`
+	CleanupError string `json:"cleanup_error"`
 }
 
 // validateMCPServer 校验单个 MCP 服务器配置，静态配置与页面托管配置共用同一规则。
@@ -348,11 +347,7 @@ func (a *component) pageMCPManage(r *http.Request) (any, int, error) {
 		a.mcpMu.Unlock()
 		a.mcpManageMu.Unlock()
 
-		// 2. 回收被替换的旧连接；回收失败时同时返回已生效的新配置状态与回收错误。
-		status, err := replacement.pageStatus(r)
-		if err != nil {
-			return nil, 0, err
-		}
+		// 2. 回收被替换的旧连接；回收失败时同时说明已完成的配置变更与回收错误。
 		closeCtx, cancel := context.WithTimeout(context.Background(), mcpCloseTimeout)
 		defer cancel()
 		if closeErr := existing.close(closeCtx); closeErr != nil {
@@ -360,11 +355,11 @@ func (a *component) pageMCPManage(r *http.Request) (any, int, error) {
 			slog.WarnContext(r.Context(), "close replaced MCP server failed", "server", existing.config.sanitize(server.Name), "error", sanitizedErr)
 			return pageMCPPartialFailure{
 				Description:  "MCP server configuration was updated, but closing the previous connection failed: " + sanitizedErr,
-				Server:       &status,
 				CleanupError: sanitizedErr,
 			}, http.StatusInternalServerError, nil
 		}
-		return status, http.StatusOK, nil
+		status, err := replacement.pageStatus(r)
+		return status, http.StatusOK, err
 	}
 	return nil, 0, errcode.InvalidArgument.New("unsupported method")
 }

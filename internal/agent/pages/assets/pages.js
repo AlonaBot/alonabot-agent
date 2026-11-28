@@ -210,13 +210,15 @@
       let idx = 0;
       for (const [key, value] of Object.entries(mapContainer)) {
         const parsed = normalizeOneMCP(key, value, idx++);
-        if (parsed) list.push(parsed);
+        if (!parsed) return { servers: [], error: text('parse_invalid') };
+        list.push(parsed);
       }
     } else if (Array.isArray(data)) {
-      data.forEach((item, idx) => {
+      for (const [idx, item] of data.entries()) {
         const parsed = normalizeOneMCP('', item, idx);
-        if (parsed) list.push(parsed);
-      });
+        if (!parsed) return { servers: [], error: text('parse_invalid') };
+        list.push(parsed);
+      }
     } else if (data && typeof data === 'object') {
       const single = normalizeOneMCP('', data, 0);
       if (single) {
@@ -226,7 +228,8 @@
         let idx = 0;
         for (const [key, value] of Object.entries(data)) {
           const parsed = normalizeOneMCP(key, value, idx++);
-          if (parsed) list.push(parsed);
+          if (!parsed) return { servers: [], error: text('parse_invalid') };
+          list.push(parsed);
         }
       }
     }

@@ -137,9 +137,12 @@ func (a *component) pageData(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 		}
+		// 重载与编辑共用操作锁，旧目录的读取不得在新写入之后发布。
+		a.skillsManageMu.Lock()
 		a.ensureManagedSkillsDir(r.Context())
 		a.reloadSkills()
 		result = a.skillsPageResponse()
+		a.skillsManageMu.Unlock()
 	case "memory":
 		result, err = a.pageMemory(r)
 	case "conversation":
